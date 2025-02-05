@@ -1,5 +1,8 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os,sys,argparse,textwrap,ipaddress,logging
-from scapy.all iport *
+from scapy.all import *
 from ctypes import *
 from time import sleep
 from threading import Thread
@@ -10,8 +13,13 @@ from colorama import Foreimport rpycolorlors
 old_print = printprint = rpycolors.Consolo().print
 
 
+# Configuration des logs
+logging.basicConfig(
+    format='[%(levelname)s] %(message)s',
+    level=logging.INFO
+)
 
-logging.getLogger("scapy.runtime").setlevel(logging.ERROR)
+# logging.getLogger("scapy.runtime").setlevel(logging.ERROR)
 
 clear = lambda:os.system('cls' if os.name == 'nt' else 'clear')
 
@@ -46,3 +54,14 @@ class Scanner:
                     
         def handle_port_response(self, ports_saved, response, port):
             
+def arguments():
+    parser = argparse.ArgumentParser(
+        description="ASTSU - Advanced Security Testing and Scanning Utility",
+        usage="astsu.py [options] target",
+    )
+    
+    #Optionq de scan
+    parser.add_argument('-sC', '--scan-common', help="Scan des port courrant", action="store_true")
+    parser.add_argument('-sA', '--scan-all', help="Scan de tous les ports (0-65535)", action="store_true")
+    parser.add_argument('-d', '--discover', help="decouverte des hôte sur le réseau", action="store_true")
+    parser.add_argument('-sO', '-scan-service', help="detection de l'OS", action="store_true")

@@ -859,3 +859,438 @@ astsu -sC -sV 192.168.1.1
 
 ---
 
+# 🚀 **Phase 6 : Gestion des Arguments et Interface en Ligne de Commande (CLI)**
+
+La gestion des arguments en ligne de commande est essentielle pour les outils de sécurité comme ASTU. Cela permet de :  
+- **Contrôler facilement les fonctionnalités** (scan de ports, détection d'OS, découverte d’hôtes, etc.)  
+- **Personnaliser les scans** selon les besoins (choix du protocole, du timeout, etc.)  
+- **Automatiser des tâches** via des scripts ou des pipelines CI/CD  
+
+Dans ASTU, cette gestion est assurée par la fonction **`arguments()`** grâce à la bibliothèque Python `argparse`. C’est ce qui permet de lancer des commandes comme :  
+```bash
+astsu -sC -sV 192.168.1.1
+```
+
+On va donc :  
+1. **Analyser la fonction `arguments()`**  
+2. **Comprendre comment les arguments sont utilisés dans ASTU**  
+3. **Examiner la logique du `main`** pour voir comment les arguments déclenchent les différentes fonctionnalités  
+
+---
+
+## ⚙️ **6.1 Fonction `arguments()` (dans `astsu.py`)**
+
+### 📄 **Code :**  
+```python
+def arguments():
+    parser = argparse.ArgumentParser(
+        description="ASTSU - Network Tool",
+        usage="\n\tastsu.py -sC 192.168.0.106\n\tastsu.py -sA 192.168.0.106"
+    )
+    
+    parser.add_argument('-sC', "--scan-common", help="Scan common ports", action="count")
+    parser.add_argument('-sA', "--scan-all", help="Scan all ports", action="count")
+    parser.add_argument('-sO', "--scan-os", help="Scan OS", action="count")
+    parser.add_argument('-sP', "--scan-port", help="Scan defined port")
+    parser.add_argument('-sV', "--scan-service", help="Try to detect service running")
+    parser.add_argument('-d', "--discover", help="Discover hosts in the network", action="count")
+    parser.add_argument('-p', "--protocol", help="Protocol to use in the scans. ICMP, UDP, TCP.", type=str, choices=['ICMP', 'UDP', 'TCP'], default=None)
+    parser.add_argument('-i', "--interface", help="Interface to use", default=None)
+    parser.add_argument('-t', "--timeout", help="Timeout to each request", default=5, type=int)
+    parser.add_argument('-st', "--stealth", help="Use Stealth scan method (TCP)", action="count")
+    parser.add_argument('-v', "--verbose", action="count")
+    parser.add_argument('Target', nargs='?', default=None)
+
+    args = parser.parse_args()
+
+    if not args.discover and not args.Target:
+        sys.exit(parser.print_help())
+
+    if not args.scan_common and not args.scan_all and not args.scan_os and not args.scan_port and not args.discover:
+        sys.exit(parser.print_help())
+
+    return (args, parser)
+```
+
+---
+
+### 🔍 **6.2 Analyse des Options d’Arguments**
+
+1. **Scans de Ports :**  
+   - `-sC` / `--scan-common` → Scan des ports courants (21, 22, 80, 443, etc.)  
+   - `-sA` / `--scan-all` → Scan de **tous les ports (0-65535)**  
+   - `-sP` / `--scan-port` → Scan de ports spécifiques (ex : `-sP 80,443`)  
+
+2. **Fonctionnalités Avancées :**  
+   - `-sO` / `--scan-os` → Détection du système d’exploitation  
+   - `-sV` / `--scan-service` → Détection des services actifs sur les ports ouverts  
+   - `-d` / `--discover` → Découverte des hôtes actifs sur le réseau  
+
+3. **Personnalisation des Scans :**  
+   - `-p` / `--protocol` → Choix du protocole (ICMP, UDP, TCP)  
+   - `-i` / `--interface` → Spécifier l’interface réseau à utiliser (utile sur des machines multi-cartes réseau)  
+   - `-t` / `--timeout` → Timeout pour chaque requête (par défaut 5 secondes)  
+   - `-st` / `--stealth` → Utiliser le mode **Stealth Scan** (TCP SYN scan)  
+   - `-v` / `--verbose` → Affichage des logs détaillés pour le debug  
+
+4. **Cible du Scan :**  
+   - `Target` → L’adresse IP ou le domaine de la cible à scanner (par exemple `192.168.1.1`)  
+
+---
+
+### 🚩 **6.3 Conditions de Validation des Arguments**
+
+Avant de lancer le scan, ASTU vérifie que les arguments sont valides :  
+```python
+if not args.discover and not args.Target:
+    sys.exit(parser.print_help())
+
+if not args.scan_common and not args.scan_all and not args.scan_os and not args.scan_port and not args.discover:
+    sys.exit(parser.print_help())
+```
+- **Si aucune cible (`Target`) n’est spécifiée** et que la découverte réseau (`-d`) n’est pas activée → le programme affiche l’aide.  
+- **Si aucun type de scan n’est demandé** → ASTU affiche également l’aide.  
+
+---
+
+## 🚀 **6.4 Intégration des Arguments dans la Logique Principale (Bloc `if __name__ == '__main__':`)**
+
+### 📄 **Code :**  
+```python
+if __name__ == '__main__':
+    args, parser = arguments() 
+
+    del logging.root.handlers[:]
+    logging.basicConfig(format="%(levelname)s%(message)s", level=logging.DEBUG if args.verbose else logging.INFO)
+
+    print_figlet()
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    ip = s.getsockname()[0]
+    s.close()
+
+    scanner = Scanner(target=args.Target, my_ip=ip, protocol=args.protocol, timeout=args.timeout, interface=args.interface)
+
+    if args.scan_common:
+        scanner.common_scan(stealth=args.stealth, sv=args.scan_service)
+
+    elif args.scan_all:
+        scanner.range_scan(start=0, end=65535, stealth=args.stealth, sv=args.scan_service)
+
+    elif args.scan_port:
+        try:
+            scanner.range_scan(start=int(args.scan_port.split(',')[0]), end=int(args.scan_port.split(',')[1]), stealth=args.stealth, sv=args.scan_service)
+        except:
+            scanner.range_scan(start=args.scan_port, stealth=args.stealth, sv=args.scan_service)
+
+    elif args.discover:
+        scanner.discover_net() 
+
+    if args.scan_os:
+        scanner.os_scan()
+```
+
+---
+
+### 🔍 **6.5 Analyse de la Logique**
+
+1. **Initialisation des Logs :**  
+   ```python
+   logging.basicConfig(format="%(levelname)s%(message)s", level=logging.DEBUG if args.verbose else logging.INFO)
+   ```
+   - Si l’option `-v` est activée, ASTU affiche des logs détaillés (niveau DEBUG).  
+   - Sinon, il utilise le niveau INFO par défaut.  
+
+2. **Détection de l’IP Locale :**  
+   ```python
+   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+   s.connect(("8.8.8.8", 80))
+   ip = s.getsockname()[0]
+   s.close()
+   ```
+   - ASTU détermine l’adresse IP locale de la machine (utile pour la découverte réseau).  
+
+3. **Création de l'Instance du Scanner :**  
+   ```python
+   scanner = Scanner(target=args.Target, my_ip=ip, protocol=args.protocol, timeout=args.timeout, interface=args.interface)
+   ```
+
+4. **Déclenchement des Fonctions en Fonction des Arguments :**  
+   - **Scan des ports courants :** `scanner.common_scan()`  
+   - **Scan de tous les ports :** `scanner.range_scan(0, 65535)`  
+   - **Scan de ports spécifiques :** `scanner.range_scan(start, end)`  
+   - **Découverte d’hôtes :** `scanner.discover_net()`  
+   - **Détection de l’OS :** `scanner.os_scan()`  
+
+---
+
+### 📊 **6.6 Exemples de Commandes ASTU**
+
+1. **Scan des Ports Courants sur une Cible :**  
+   ```bash
+   astsu -sC 192.168.1.1
+   ```
+   - Scanne les ports courants (21, 22, 80, 443, etc.).  
+
+2. **Scan de Tous les Ports avec le Mode Stealth (TCP SYN) :**  
+   ```bash
+   astsu -sA -st 192.168.1.1
+   ```
+
+3. **Scan d’une Plage de Ports Définie (ex : 20 à 100) :**  
+   ```bash
+   astsu -sP 20,100 192.168.1.1
+   ```
+
+4. **Découverte des Hôtes Actifs sur le Réseau :**  
+   ```bash
+   astsu -d
+   ```
+
+5. **Détection de l’OS de la Cible :**  
+   ```bash
+   astsu -sO 192.168.1.1
+   ```
+
+6. **Scan avec Logs Verboses pour le Débogage :**  
+   ```bash
+   astsu -sC -v 192.168.1.1
+   ```
+
+---
+
+# 🚀 **Phase 7 : Optimisation, Personnalisation et Améliorations**
+
+Maintenant que nous avons une compréhension complète de la structure d’ASTU et de ses fonctionnalités principales, nous allons aborder la **phase d’optimisation et de personnalisation**. L’objectif est d’améliorer la performance, la fiabilité, et de préparer l’ajout de nouvelles fonctionnalités, notamment la **détection d'OS améliorée** que tu souhaites implémenter.  
+
+---
+
+## 🎯 **7.1 Objectifs de l’Optimisation**
+
+Voici les axes d’amélioration que nous allons explorer :  
+
+1. **Performance :**  
+   - Accélérer les scans de ports (surtout pour les plages étendues).  
+   - Optimiser la découverte des hôtes pour réduire le temps de scan.  
+
+2. **Fiabilité :**  
+   - Améliorer la détection d’OS pour réduire les faux positifs.  
+   - Corriger les bugs existants (par exemple le `return True` dans `scan_service`).  
+
+3. **Ergonomie :**  
+   - Améliorer la gestion des erreurs pour des messages plus clairs.  
+   - Ajouter de nouvelles options pour un contrôle plus fin des scans.  
+
+4. **Sécurité :**  
+   - Implémenter des protections contre des erreurs critiques (ex : scans sur des IP non autorisées par erreur).  
+
+---
+
+## ⚡ **7.2 Optimisation des Scans de Ports**
+
+### 🚩 **Problème actuel :**  
+- Le scan des ports est **séquentiel**, ce qui peut être très lent sur des plages de ports larges (ex : `-sA` pour 0-65535).  
+- La gestion des timeouts ralentit encore plus le processus.  
+
+### 🚀 **Solution : Multithreading pour les Scans de Ports**
+
+L’idée est d’exécuter plusieurs scans de ports en parallèle grâce à des **threads**. Cela permettra de :  
+- Réduire considérablement le temps de scan.  
+- Exploiter pleinement les ressources du CPU.  
+
+### 🧩 **Exemple de Modification (Multithreading dans `range_scan`)**
+
+#### 🔄 **Code Optimisé :**  
+```python
+from threading import Thread
+
+def range_scan(self, start, end=None, stealth=None, sv=None):
+    open_ports = []
+    filtered_ports = []
+    open_or_filtered = []
+    threads = []
+
+    ports = range(start, end) if end else [start]
+
+    def thread_scan(port):
+        scan = self.port_scan(stealth, port=port)
+        if scan:
+            ports_saved = {"open": open_ports, "filtered": filtered_ports, "open/filtered": open_or_filtered}
+            self.handle_port_response(ports_saved, scan, port)
+
+    # Création des threads pour chaque port
+    for port in ports:
+        t = Thread(target=thread_scan, args=(port,))
+        t.start()
+        threads.append(t)
+
+    # Attente de la fin de tous les threads
+    for t in threads:
+        t.join()
+
+    total = len(open_ports) + len(filtered_ports) + len(open_or_filtered)
+    logging.info(f"Found {total} ports!")
+
+    for port in open_ports:
+        logging.info(f"Port: {port} - Open")
+    for port in filtered_ports:
+        logging.warning(f"Port: {port} - Filtered")
+    for port in open_or_filtered:
+        logging.info(f"Port: {port} - Open/Filtered")
+```
+
+### ✅ **Résultats attendus :**  
+- Un **gain de temps considérable** pour les scans de plages de ports étendues.  
+- Une utilisation plus efficace des ressources système.  
+
+---
+
+## 🌐 **7.3 Optimisation de la Découverte d’Hôtes (ICMP Ping Sweep)**
+
+La fonction `discover_net()` utilise déjà des threads, mais on peut aller plus loin :  
+- **Limiter le nombre de threads simultanés** pour éviter de saturer le réseau.  
+- Implémenter une **file d’attente (Queue)** pour gérer les threads plus efficacement.  
+
+### 🧩 **Amélioration : Gestion des Threads avec une File d’Attente**
+
+```python
+from queue import Queue
+
+def discover_net(self, ip_range=24):
+    base_ip = f"{self.my_ip.rsplit('.', 1)[0]}.0/{ip_range}"
+    hosts = list(ipaddress.ip_network(base_ip).hosts())
+
+    q = Queue()
+    results = []
+
+    def worker():
+        while not q.empty():
+            target = q.get()
+            if self.send_icmp(target):
+                results.append(target)
+            q.task_done()
+
+    # Remplir la file d'attente avec les IP à scanner
+    for host in hosts:
+        q.put(str(host))
+
+    # Lancer un nombre limité de threads (par exemple 50)
+    for _ in range(50):
+        t = Thread(target=worker)
+        t.start()
+
+    q.join()
+
+    logging.info(f"Found {len(results)} active hosts!")
+    for host in results:
+        logging.info(f"Host found: {host}")
+```
+
+### ✅ **Résultats attendus :**  
+- Meilleure gestion des ressources réseau.  
+- Réduction du risque de saturation sur des réseaux sensibles.  
+
+---
+
+## 🖥️ **7.4 Amélioration de la Détection d’OS (Préparation)**
+
+Tu as mentionné vouloir **améliorer la détection d’OS**. Voici quelques pistes que nous pourrons implémenter :  
+
+### 🔍 **Approches possibles :**  
+1. **Fingerprinting TCP Avancé :**  
+   - Analyse des **options TCP**, des **fenêtres de taille**, et des **réponses aux paquets malformés**.  
+   - Observation des réponses SYN-ACK pour des comportements spécifiques à certains OS.  
+
+2. **Bannières des Services :**  
+   - Identifier des indices sur l’OS à partir des services exposés (ex : SSH peut indiquer un OS Linux spécifique).  
+
+3. **Combinaison de Méthodes :**  
+   - Fusion des résultats ICMP, TCP et des bannières de services pour une détection plus fiable.  
+
+### 🧪 **Exemple d’approche hybride :**
+
+```python
+def advanced_os_scan(self):
+    # Analyse ICMP (TTL)
+    icmp_os = os_detection.scan(self.target)
+
+    # Fingerprinting TCP (réponse aux paquets SYN-ACK)
+    tcp_pkt = IP(dst=self.target) / TCP(dport=80, flags="S")
+    tcp_resp = sr1(tcp_pkt, timeout=3, verbose=0)
+    tcp_os = "Unknown"
+
+    if tcp_resp and tcp_resp.haslayer(TCP):
+        window_size = tcp_resp[TCP].window
+        if window_size == 64240:
+            tcp_os = "Linux probable"
+        elif window_size == 8192:
+            tcp_os = "Windows probable"
+
+    # Fusion des résultats
+    if icmp_os == tcp_os:
+        final_os = icmp_os
+    else:
+        final_os = f"Possibly {icmp_os} or {tcp_os}"
+
+    logging.info(f"Advanced OS Detection: {final_os}")
+```
+
+### ✅ **Résultats attendus :**  
+- Une **réduction des faux positifs** en croisant plusieurs sources d’informations.  
+- Meilleure précision pour identifier des systèmes obscurs ou protégés.  
+
+---
+
+## 🛡️ **7.5 Gestion des Erreurs et Sécurité**
+
+1. **Amélioration des Messages d’Erreur :**  
+   - Ajouter des messages plus détaillés pour aider à diagnostiquer des problèmes de réseau, de permissions, etc.  
+   - Exemple : distinguer entre un port fermé et un port filtré par un pare-feu.  
+
+2. **Vérification des Permissions :**  
+   - Certains scans (comme le SYN Scan) nécessitent des privilèges root/admin.  
+   - Vérifier automatiquement si l’utilisateur a les droits nécessaires.  
+
+### 🔐 **Exemple de vérification de privilèges (Linux) :**
+
+```python
+import os
+def check_privileges():
+    if os.geteuid() != 0:
+        logging.warning("Warning: Some scans require root privileges to work properly.")
+```
+
+---
+
+## 🚀 **7.6 Nouvelles Fonctionnalités Potentielles (Roadmap)**
+
+1. **Scan ARP pour les réseaux locaux :**  
+   - Plus efficace que l’ICMP pour la détection d’hôtes sur un LAN.  
+
+2. **Détection de Vulnérabilités de Base :**  
+   - Vérification des services exposés contre des bases de vulnérabilités connues (CVE simples).  
+
+3. **Interface Web Légère (optionnelle) :**  
+   - Dashboard pour visualiser les résultats des scans de manière interactive.  
+
+---
+
+## ✅ **Bilan de la Phase 7**
+
+### 🔑 **Ce qu’on a couvert :**  
+- **Optimisation des performances** avec le multithreading pour les scans de ports et la découverte d’hôtes.  
+- **Préparation à l’amélioration de la détection d’OS** (fingerprinting hybride).  
+- **Meilleure gestion des erreurs** pour des scans plus fiables et sécurisés.  
+- **Perspectives d’évolution** avec des fonctionnalités avancées à venir.  
+
+---
+
+### 🚀 **Prochaine Étape : Phase 8 - Documentation et Partage de Projet**
+
+On va :  
+1. Préparer la **documentation technique** (README, commentaires dans le code, etc.).  
+2. Structurer un **post LinkedIn** pour présenter ton projet et ton apprentissage.  
+3. Discuter des **bonnes pratiques de présentation technique** pour maximiser l’impact de ton travail.  
+
+Prêt à continuer ? 😊
