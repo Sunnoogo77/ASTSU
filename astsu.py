@@ -54,7 +54,7 @@ class Scanner:
                     return {port: 'Closed'}
                 
             elif scan.getlayer(scapy.ICMP):
-                if int(scan.getlayer(scapy.ICMP).type) == 3 and int(scan.getlayer(scapy.ICMP).code in [1,2,3,9,10,13]):
+                if scan.getlayer(scapy.ICMP).type == 3 and int(scan.getlayer(scapy.ICMP).code in [1,2,3,9,10,13]):
                     return {port: 'Filtered'}
                 
         else:
@@ -63,10 +63,10 @@ class Scanner:
                 scan = scapy.sr1(pkt, timeout=self.timeout, verbose=0)
                 
                 if scan == None:
-                    return {port: 'Filterde'}
+                    return {port: 'Filtered'}
                 elif scan.haslayer(scapy.TCP):
                     if scan.getlayer(scapy.TCP).flags == 0x12: #0x12 Syn+Ack
-                        pkt = scapy.IP(dst=self.target)/TCP(dport=port, flags="AR")
+                        pkt = scapy.IP(dst=self.target)/scapy.TCP(dport=port, flags="AR")
                         send_rst = scapy.sr(pkt, timeout=self.timeout, verbose=0)
                         return {port: 'Open'}
                     elif scan.getlayer(scapy.TCP).flags == 0x14:
@@ -81,7 +81,7 @@ class Scanner:
                 elif scan.haslayer(scapy.UDP):
                     return {port: 'Closed'}
                 elif scan.haslayer(scapy.ICMP):
-                    if int(scan.getlayer(scapy.ICMP).type) == 3 and int(scan.getlayer(ICMP).code) == 3:
+                    if int(scan.getlayer(scapy.ICMP).type) == 3 and int(scan.getlayer(scapy.ICMP).code) == 3:
                         return {port: 'Closed'}
                 
     def handle_port_response(self, ports_saved, response, port):
@@ -199,7 +199,7 @@ class Scanner:
         target_os = os_detection.scan(self.target)
 
         if target_os:
-            logging.info(f"Système d'exploitation détecté : {target_os}")
+            logging.info(f"[INFO] Système d'exploitation détecté : {target_os}")
         else:
             logging.warning("[[red]-[/red]] [ERROR] Impossible de détecter le système d'exploitation")
 
@@ -299,15 +299,15 @@ class Scanner:
         protocol = self.protocol or "ICMP"
 
         if protocol != "ICMP":
-            logging.warning(f"⚠️  {protocol} n'est pas supporté ! Utilisation forcée d'ICMP.")
-            logging.critical("❌ Protocole invalide pour ce scan.")
+            logging.warning(f"[WARNING]  {protocol} n'est pas supporté ! Utilisation forcée d'ICMP.")
+            logging.critical("[ERROR] Protocole invalide pour ce scan.")
             return False
 
         try:
             # Vérification et formatage de l'adresse IP de base
             base_ip_parts = self.my_ip.split('.')
             if len(base_ip_parts) != 4:
-                logging.critical("❌ Adresse IP locale invalide !")
+                logging.critical("[ERROR] Adresse IP locale invalide !")
                 return False
 
             base_ip = f"{base_ip_parts[0]}.{base_ip_parts[1]}.{base_ip_parts[2]}.0/{ip_range}"
@@ -315,13 +315,13 @@ class Scanner:
             hosts = list(network.hosts())
 
         except ValueError as e:
-            logging.critical(f"❌ Erreur avec l'adresse IP fournie : {e}")
+            logging.critical(f"[ERROR] Erreur avec l'adresse IP fournie : {e}")
             return False
 
-        logging.info(f"🔍 Scan ICMP en cours sur {len(hosts)} hôtes...")
+        logging.info(f"[INFO] Scan ICMP en cours sur {len(hosts)} hôtes...")
 
         # Initialisation de la barre de progression
-        bar = ChargingBar("📡 Scan en cours...", max=len(hosts))
+        bar = ChargingBar("[INFO]  Scan en cours...", max=len(hosts))
         results = [None] * len(hosts)
 
         # ✅ Ajout d'une limite de threads pour éviter de surcharger le CPU
@@ -350,11 +350,11 @@ class Scanner:
         hosts_found = [i for i in results if i is not None]
         
         if hosts_found:
-            logging.info(f"✅ {len(hosts_found)} hôtes actifs trouvés :")
+            logging.info(f"[INFO] {len(hosts_found)} hôtes actifs trouvés :")
             for host in hosts_found:
-                logging.info(f"  ➜ {host}")
+                logging.info(f"[INFO]  ➜ {host}")
         else:
-            logging.warning("❌ Aucun hôte actif trouvé.")
+            logging.warning("[WARNING] Aucun hôte actif trouvé.")
 
         return bool(hosts_found)  # Retourne `True` si au moins un hôte est trouvé
 
@@ -377,7 +377,7 @@ def arguments():
     parser.add_argument('-i', '--interface', help="Interface réseau à utiliser")
     parser.add_argument('-t', '--timeout', help="Timeout pour les requêtes", type=int, default=5)
     parser.add_argument('-p', '--protocol', help="Protocole à utiliser (TCP, UDP, ICMP)", choices=['TCP', 'UDP', 'ICMP'])
-    parser.add_argument('-o', '--output', help="Fichier de sortie")
+    parser.add_argument('-o', '--output', help="Fichier de sortie pour enregistrer les résultats")
     parser.add_argument('-v', '--version', help="Affiche la version", action="store_true")
     parser.add_argument('-st', '--stealth', help='Utiliser le scan stealth (TCP SYN)', action='store_true')
     
