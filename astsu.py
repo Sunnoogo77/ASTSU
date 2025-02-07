@@ -125,7 +125,8 @@ class Scanner:
                 logging.info("\n\tDémarrage - Scan du port UDP\n")
             else:
                 pass
-        
+            
+        results_for_file = []
         for port in ports:
             scan = self.port_scan(stealth=stealth, port=port)
             
@@ -138,6 +139,11 @@ class Scanner:
                 open_ports, filtered_ports, open_or_filtered_ports = self.handle_port_response(
                     ports_saved=ports_saved, response=scan, port=port
                 )
+                #Ajout des resultats formaté dans le fichier de sortie
+                for status, ports_list in[("Open", open_ports), ("Filtered", filtered_ports), ("Open/Filtered", open_or_filtered_ports)]:
+                    for port in ports_list:
+                        results_for_file.append(f"Port: {port} - {status}")
+
         if open_ports or filtered_ports or open_or_filtered_ports:
             total = len(open_ports) + len(filtered_ports) + len(open_or_filtered_ports)
             
@@ -149,6 +155,9 @@ class Scanner:
                 logging.info(f"Port: {port} - Filtered")
             for port in open_or_filtered_ports:
                 logging.info(f"Port: {port} -Open/Filtered")
+            
+        
+        return results_for_file
     
     def range_scan(self, start, end=None, stealth=None, sv=None):
         
@@ -212,89 +221,14 @@ class Scanner:
 
         if host_found:
             result[index] = host_found[0]
-    
-    # def discover_net(self, ip_range=24):
-    #     protocol = self.protocol
-    #     base_ip = self.my_ip
 
-    #     if not protocol:
-    #         protocol = "ICMP"
-    #     else:
-    #         if protocol != "ICMP":
-    #             logging.warning(f"Avertissement : {protocol} n'est pas supporté pour la découverte réseau. Utilisation d'ICMP.")
-
-    #     if protocol == "ICMP":
-    #         logging.info("Démarrage de la découverte des hôtes actifs sur le réseau...")
-
-    #         base_ip = base_ip.split('.')
-    #         base_ip = f"{str(base_ip[0])}.{str(base_ip[1])}.{str(base_ip[2])}.0/{str(ip_range)}"
-
-    #         hosts = list(ipaddress.ip_network(base_ip).hosts())
-    #         results = [None] * len(hosts)
-
-    #         threads = []
-    #         for i, host in enumerate(hosts):
-    #             t = Thread(target=self.send_icmp, args=(host, results, i))
-    #             t.start()
-    #             threads.append(t)
-
-    #         for t in threads:
-    #             t.join()
-
-    #         hosts_found = [i for i in results if i is not None]
-
-    #         if not hosts_found:
-    #             logging.warning("[INFO] Aucun hôte trouvé.")
-    #         else:
-    #             logging.info(f"{len(hosts_found)} hôtes trouvés sur le réseau.")
-    #             for host in hosts_found:
-    #                 logging.info(f"Hôte actif : {host}")
-    # Pour l'UX (barre de progression)
-
-    # def discover_net(self, ip_range=24):
-    #     protocol = self.protocol or "ICMP"
-
-    #     if protocol != "ICMP":
-    #         logging.warning(f"⚠️  {protocol} n'est pas supporté ! Utilisation forcée d'ICMP.")
-    #         logging.critical("❌ Protocole invalide pour ce scan.")
-    #         return False
+    def service_scan(self, target):
+        open_ports = [21, 22, 80, 433, 3306, 8080]
         
-    #     else:
-    #         logging.info("🔍 Début du scan de découverte réseau...")
-
-    #         # Calcul du réseau en excluant les adresses inutiles
-    #         base_ip = self.my_ip.split('.')
-    #         base_ip = f"{base_ip[0]}.{base_ip[1]}.{base_ip[2]}.0/{ip_range}"
-    #         hosts = list(ipaddress.ip_network(base_ip).hosts())  # ✅ Exclut réseau & broadcast
-
-    #         # Initialisation de la barre de progression
-    #         bar = ChargingBar("📡 Scan en cours...", max=len(hosts))
-    #         results = [None] * len(hosts)
-
-    #         # Gestion des threads (simplifié)
-    #         threads = []
-    #         for i, host in enumerate(hosts):
-    #             t = Thread(target=self.send_icmp, args=(host, results, i))
-    #             t.start()
-    #             threads.append(t)
-
-    #         for t in threads:
-    #             t.join()
-    #             bar.next()
-
-    #         bar.finish()  # Fin de la barre de progression
-
-    #         # Résultat final
-    #         hosts_found = [i for i in results if i is not None]
-    #         if hosts_found:
-    #             logging.info(f"✅ {len(hosts_found)} hosts found:")
-    #             for host in hosts_found:
-    #                 logging.info(f" ➜ {host}")
-    #         else:
-    #             logging.warning("❌ Aucun hôte actif trouvé.")
-
-    #         return bool(hosts_found) 
-
+        for port in open_ports:
+            service = service_detection.scan_service(target, port)
+            logging.info(f"Port {port} : {service}")
+        
     def discover_net(self, ip_range=24, max_threads=50):  # Ajout d'une limite de threads
         protocol = self.protocol or "ICMP"
 
@@ -419,25 +353,48 @@ if __name__ == '__main__':
         logging.info(f"\t ASTU Version: {__version__}")
         print("\n")
         sys.exit(0) 
+    
+    if args.output:
+        output_file = args.output
+        with open(output_file, "w") as f:
+            f.write("===== ASTU Scan Report =====\n")
+        logging.info(f"[INFO] Les résultats seront enregistrés dans : {output_file}")
+
 
     logging.info("Bienvenue dans ASTU - Advanced Network Scanner 🚀")
 
     if args.scan_common:
         logging.info(f"Scan des ports courants sur {args.Target}")
-        scanner.common_scan(stealth=args.stealth)
+        results = scanner.common_scan(stealth=args.stealth)
+        if args.output:
+            with open(output_file, "a") as f:
+                f.write("\n".join(results) + "\n")
+
 
     if args.scan_all:
         logging.info(f"Scan de tous les ports sur {args.Target}")
-        scanner.range_scan(start=0, end=65535, stealth=args.stealth)
-
+        results = scanner.range_scan(start=0, end=65535, stealth=args.stealth)
+        if args.output:
+            with open(output_file, "a") as f:
+                f.write("\n".join(results) + "\n")
+                
     if args.discover:
         logging.info("Découverte des hôtes sur le réseau local")
-        scanner.discover_net()
+        results = scanner.discover_net()
+        if args.output:
+            with open(output_file, "a") as f:
+                f.write("\n".join(results) + "\n")
 
     if args.scan_os:
         logging.info(f"Détection de l'OS de la cible {args.Target}")
-        scanner.os_scan()
+        results = scanner.os_scan()
+        if args.output:
+            with open(output_file, "a") as f:
+                f.write("\n".join(results) + "\n")
 
     if args.scan_service:
         logging.info(f"Détection des services actifs sur {args.Target}")
-        # On ajoutera ici la logique de détection des services
+        results = scanner.service_scan(args.Target)
+        if args.output:
+            with open(output_file, "a") as f:
+                f.write("\n".join(results) + "\n")
