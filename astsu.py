@@ -392,9 +392,9 @@ if __name__ == '__main__':
             with open(output_file, "a") as f:
                 f.write("\n".join(results) + "\n")
 
-    if args.scan_service:
-        logging.info(f"Détection des services actifs sur {args.Target}")
-        results = scanner.service_scan(args.Target)
-        if args.output:
-            with open(output_file, "a") as f:
-                f.write("\n".join(results) + "\n")
+    # if args.scan_service:
+    #     logging.info(f"Détection des services actifs sur {args.Target}")
+    #     results = scanner.service_scan(args.Target)
+    #     if args.output:
+    #         with open(output_file, "a") as f:
+    #             f.write("\n".join(results) + "\n")
