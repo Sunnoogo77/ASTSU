@@ -1,5 +1,7 @@
 ## 🚀 **Plan de Travail Pédagogique**  
 
+**[Notion](https://www.notion.so/Suivi-du-Projet-ASTSU-195a6f7c605880549a55cfde7e9db21c?showMoveTo=true&saveParent=true)**
+
 ### **🔍 Phase 1 : Analyse de l'Architecture Générale d’ASTU**  
 - **Objectif :** Comprendre la structure globale du code et le rôle de chaque composant.  
 - **Ce qu'on va voir :**  
