@@ -31,8 +31,9 @@ class Scanner:
         self.target = target
         self.my_ip = my_ip
         self.protocol = protocol
-        self.timeout = timeout
-        self.interface = interface
+        self.timeout = args.timeout if args.timeout else 5
+        self.interface = args.interface if args.interface else None
+
         
     def port_scan(self, stealth=None, port=80):
         protocol = self.protocol if self.protocol else "TCP"
@@ -40,6 +41,7 @@ class Scanner:
         if stealth:
             pkt = scapy.IP(dst=self.target) / scapy.TCP(dport=port, flags="S")
             scan = scapy.sr1(pkt, timeout=self.timeout, verbose=0) 
+            
             
             if scan is None:
                 return {port: 'Filtered'}
@@ -88,45 +90,46 @@ class Scanner:
         open_port = ports_saved['open']
         filtered_ports = ports_saved['filtered']
         open_or_filtered = ports_saved['open/filtered']
+        closed_ports = ports_saved['closed']
         
         if response[port] == 'Closed':
-            logging.warning(f"[CLOSED] Port {port}")
+            print(f"[CLOSED]      ------> Port {port}")
+            closed_ports.append(port)
         elif response[port] == 'Open':
-            logging.warning(f"[OPEN] Port {port}")
+            print(f"[OPEN]        ------> Port {port}")
             open_port.append(port)
         elif response[port] == 'Filtered':
-            logging.warning(f"[FILTERED] Port {port}")
+            print(f"[FILTERED]     -----> Port {port}")
             filtered_ports.append(port)
         elif response[port] == 'Open/filtered':
-            logging.warning(f"[OPEN/FILTERED] Port {port}")
+            print(f"[OPEN/FILTERED]  --> Port {port}")
             open_or_filtered.append(port)
         else:
             pass
         
-        return (open_port, filtered_ports, open_or_filtered)
+        return open_port, filtered_ports, open_or_filtered, closed_ports
     
     def common_scan(self, stealth=None, sv=None):
-        if not self.protocol:
-            protocol = "TCP"
-        else:
-            protocol =  self.protocol
+        protocol = self.protocol if self.protocol else "TCP"
         
         ports = [21, 22, 80, 443, 3306, 14147, 2121, 8080, 8000]
         open_ports = []
         filtered_ports = []
         open_or_filtered_ports = []
+        closed_ports = []
+        
+        results_for_file = []
         
         if stealth:
-            logging.info("\n\tDémarrage - Scan furtif du port TCP\n")
+            print("\n\n\tDémarrage - Scan furtif des ports --> TCP <--\n\n")
         else :
             if protocol == "TCP":
-                logging.info("\n\tDémarrage - Analyse du port de connexion TCP\n")
+                print("\n\n\tDémarrage - Analyse des port --> TCP <--\n\n")
             elif protocol == "UDP":
-                logging.info("\n\tDémarrage - Scan du port UDP\n")
+                print("\n\n\tDémarrage - Scan du port --> UDP <-- \n\n")
             else:
                 pass
             
-        results_for_file = []
         for port in ports:
             scan = self.port_scan(stealth=stealth, port=port)
             
@@ -134,29 +137,31 @@ class Scanner:
                 ports_saved = {
                     "open": open_ports,
                     "filtered":filtered_ports,
-                    "open/filtered": open_or_filtered_ports
+                    "open/filtered": open_or_filtered_ports,
+                    "closed": closed_ports
                 }
-                open_ports, filtered_ports, open_or_filtered_ports = self.handle_port_response(
+                open_ports, filtered_ports, open_or_filtered_ports, closed_ports = self.handle_port_response(
                     ports_saved=ports_saved, response=scan, port=port
                 )
+                
+                    
                 #Ajout des resultats formaté dans le fichier de sortie
-                for status, ports_list in[("Open", open_ports), ("Filtered", filtered_ports), ("Open/Filtered", open_or_filtered_ports)]:
+                for status, ports_list in[
+                    ("Open", open_ports), 
+                    ("Filtered", filtered_ports), 
+                    ("Open/Filtered", open_or_filtered_ports),
+                    ("Closed", closed_ports)
+                ]:
                     for port in ports_list:
                         results_for_file.append(f"Port: {port} - {status}")
 
-        if open_ports or filtered_ports or open_or_filtered_ports:
-            total = len(open_ports) + len(filtered_ports) + len(open_or_filtered_ports)
-            
-            logging.info(f"Scan terminé :{total} ports analysés.")
-            
-            for port in open_ports:
-                logging.info(f"Port: {port} - Open")
-            for port in filtered_ports:
-                logging.info(f"Port: {port} - Filtered")
-            for port in open_or_filtered_ports:
-                logging.info(f"Port: {port} -Open/Filtered")
-            
         
+        total = len(open_ports) + len(filtered_ports) + len(open_or_filtered_ports) + len(closed_ports)
+        print(f"\n\t ✅ Scan terminé :{total} ports analysés dont : ")
+        print(f"\t\t{len(open_ports)} - Open")
+        print(f"\t\t{len(closed_ports)} - Closed\n")
+        
+            
         return results_for_file
     
     def range_scan(self, start, end=None, stealth=None, sv=None):
@@ -187,21 +192,21 @@ class Scanner:
                 ports_saved = {
                     "open": open_ports,
                     "filtered": filtered_ports,
-                    "open/filtered": open_or_filtered
+                    "open/filtered": open_or_filtered_ports
                 }
 
-                open_ports, filtered_ports, open_or_filtered = self.handle_port_response(
+                open_ports, filtered_ports, open_or_filtered_ports = self.handle_port_response(
                     ports_saved=ports_saved, response=scan, port=port
                 )
 
-        total = len(open_ports) + len(filtered_ports) + len(open_or_filtered)
+        total = len(open_ports) + len(filtered_ports) + len(open_or_filtered_ports)
         logging.info(f"Scan terminé : {total} ports analysés.")
 
         for port in open_ports:
             logging.info(f"Port: {port} - Open")
         for port in filtered_ports:
             logging.warning(f"Port: {port} - Filtered")
-        for port in open_or_filtered:
+        for port in open_or_filtered_ports:
             logging.info(f"Port: {port} - Open/Filtered")
 
     def os_scan(self):
@@ -335,11 +340,15 @@ def arguments():
 if __name__ == '__main__':
     args, parser = arguments()
     
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("8.8.8.8",80))
-    ip = s.getsockname()[0]
-    s.close()
-    
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8",80))
+        ip = s.getsockname()[0]
+        s.close()
+        
+    except ValueError as e :
+        logging.critical(f"[ERROR] Erreur avec l'adresse IP fournie : {e}")
+        
     scanner = Scanner(
         target=args.Target,
         my_ip=ip,
@@ -357,18 +366,18 @@ if __name__ == '__main__':
     if args.output:
         output_file = args.output
         with open(output_file, "w") as f:
-            f.write("===== ASTU Scan Report =====\n")
-        logging.info(f"[INFO] Les résultats seront enregistrés dans : {output_file}")
+            f.write("\t\t===== ASTU Scan Report =====\n\n")
+        # logging.info(f"[INFO] Les résultats seront enregistrés dans : {output_file}")
 
 
-    logging.info("Bienvenue dans ASTU - Advanced Network Scanner 🚀")
+    print("\n\tBienvenue dans ASTU - Advanced Network Scanner 🚀\n")
 
     if args.scan_common:
-        logging.info(f"Scan des ports courants sur {args.Target}")
+        print(f"Scan des ports courants sur {args.Target}")
         results = scanner.common_scan(stealth=args.stealth)
         if args.output:
             with open(output_file, "a") as f:
-                f.write("\n".join(results) + "\n")
+                f.write("\n".join(set(results)) + "\n")
 
 
     if args.scan_all:
