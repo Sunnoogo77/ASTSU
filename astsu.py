@@ -44,7 +44,6 @@ class Scanner:
             
             
             if scan is None:
-                print(f"⚠️  Machine {self.target} semble éteinte ou injoignable.")
                 return {port: 'Filtered'}
             
             elif scan.haslayer(scapy.TCP):
@@ -66,7 +65,6 @@ class Scanner:
                 scan = scapy.sr1(pkt, timeout=self.timeout, verbose=0)
                 
                 if scan == None:
-                    print(f"⚠️  Machine {self.target} semble éteinte ou injoignable.")
                     return {port: 'Filtered'}
                 
                 elif scan.haslayer(scapy.TCP):
@@ -82,7 +80,6 @@ class Scanner:
                 scan = scapy.sr1(pkt, timeout=self.timeout, verbose=0)
                 
                 if scan ==  None:
-                    print(f"⚠️  Machine {self.target} semble éteinte ou injoignable.")
                     return {port: 'Open/Filtered'}
                 
                 elif scan.haslayer(scapy.UDP):
@@ -90,7 +87,19 @@ class Scanner:
                 elif scan.haslayer(scapy.ICMP):
                     if int(scan.getlayer(scapy.ICMP).type) == 3 and int(scan.getlayer(scapy.ICMP).code) == 3:
                         return {port: 'Closed'}
-    # def scan_port(self, stealth=None, target, port):
+            
+            elif protocol == "ICMP":
+                pkt = scapy.IP(dst=self.target)/scapy.ICMP()
+                scan = scapy.sr1(pkt, timeout=self.timeout, verbose=0)
+                
+                if scan == None:
+                    return {port: 'Filtered'}
+                
+                elif scan.haslayer(scapy.ICMP):
+                    if int(scan.getlayer(scapy.ICMP).type) == 0:
+                        return {port: 'Open'}
+                    elif int(scan.getlayer(scapy.ICMP).type) == 3:
+                        return {port: 'Closed'}
         
     def handle_port_response(self, ports_saved, response, port):
         open_port = ports_saved['open']
@@ -107,7 +116,7 @@ class Scanner:
         elif response[port] == 'Filtered':
             print(f"[FILTERED]     -----> Port {port}")
             filtered_ports.append(port)
-        elif response[port] == 'Open/filtered':
+        elif response[port] == 'Open/Filtered':
             print(f"[OPEN/FILTERED]  --> Port {port}")
             open_or_filtered.append(port)
         else:
@@ -128,11 +137,13 @@ class Scanner:
         
         if stealth:
             print("\n\n\tDémarrage - Scan furtif des ports --> TCP <--\n\n")
-        else :
+        else:
             if protocol == "TCP":
                 print("\n\n\tDémarrage - Analyse des port --> TCP <--\n\n")
             elif protocol == "UDP":
                 print("\n\n\tDémarrage - Scan du port --> UDP <-- \n\n")
+            elif protocol == "ICMP":
+                print("\n\n\tDémarrage - Scan du port --> ICMP <-- \n\n")
             else:
                 pass
             
@@ -163,11 +174,18 @@ class Scanner:
             results_for_file.append(f"Port: {port} - {status}")
                     
         total = len(open_ports) + len(filtered_ports) + len(open_or_filtered_ports) + len(closed_ports)
-        print(f"\n\t ✅ Scan terminé :{total} ports analysés dont : ")
+        print(f"\n\n\t ✅ Scan terminé :{total} ports analysés dont : \n")
         print(f"\t\t{len(open_ports)} - Open")
         print(f"\t\t{len(closed_ports)} - Closed")
         print(f"\t\t{len(filtered_ports)} - Filtered")
         print(f"\t\t{len(open_or_filtered_ports)} - Open/Filtered\n")
+        
+        if len(filtered_ports) == len(ports):
+            print(f"\n\n⚠️  Tous les ports sont filtrés. Pare-feu détecté ou machine {self.target} injoignable !\n\n")
+        elif len(closed_ports) == len(ports):
+            print(f"\n\n⚠️  Tous les ports sont fermés. Machine {self.target} injoignable ou aucun service actif !\n\n")
+        elif len(open_or_filtered_ports) == len(ports):
+            print(f"\n\n⚠️  Tous les ports sont ouverts/filtrés. Pare-feu détecté ou machine {self.target} injoignable !\n\n")
         
             
         return results_for_file
@@ -235,13 +253,18 @@ class Scanner:
         target_os = os_detection.scan(self.target)
         target_os_str = ''
         if target_os:
-            print(f"\n\tSystème d'exploitation détecté : {target_os}\n")
-            target_os_str = "OS detected : " + str(target_os)
+            if target_os == 'Linux' or target_os == 'Windows':
+                print(f"\n\tSystème d'exploitation détecté : {target_os}\n")
+                target_os_str = "OS detected : " + str(target_os)
+            else:
+                print(f"\n\t---- : {target_os}\n")
+                target_os_str = "----- : " + str(target_os)
         else:
             print("\n\t[[red]-[/red]] [ERROR] Impossible de détecter le système d'exploitation\n")
         return target_os_str
     
     def send_icmp(self, target, result, index):
+        # print(f"[+] Envoi de paquets ICMP à {target}...")
         target = str(target)
         host_found = []
         pkg = scapy.IP(dst=target) / scapy.ICMP()
@@ -292,14 +315,16 @@ class Scanner:
         return results
         
     def discover_net(self, ip_range=24, max_threads=50):  # Ajout d'une limite de threads
-        protocol = self.protocol or "ICMP"
+        protocol = self.protocol if self.protocol else "ICMP"
 
         if protocol != "ICMP":
-            logging.warning(f"[WARNING]  {protocol} n'est pas supporté ! Utilisation forcée d'ICMP.")
-            logging.critical("[ERROR] Protocole invalide pour ce scan.")
+            print(f"\n\n❌❌❌❌❌[WARNING]  {protocol} n'est pas supporté ! Utilisation forcée d'ICMP.\n")
+            print("❌❌❌❌❌[ERROR] Protocole invalide pour ce scan.\n\n")
             return False
 
         try:
+            print(f"\n\n\tDémarrage - Découverte des hôtes sur le réseau local\n")
+            
             # Vérification et formatage de l'adresse IP de base
             base_ip_parts = self.my_ip.split('.')
             if len(base_ip_parts) != 4:
@@ -402,12 +427,12 @@ if __name__ == '__main__':
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8",80))
         ip = s.getsockname()[0]
+        # print(ip)
         s.close()
     except OSError:
         ip = "0.0.0.0"
-        print("\n")
-        logging.warning("⚠️  Connexion Internet absente. L'adresse IP locale ne peut pas être détectée.")
-        logging.warning("⚠️  Assurez-vous d'être connecté au réseau avant de lancer un scan.")
+        print("\n\t⚠️  Connexion Internet absente. L'adresse IP locale ne peut pas être détectée.")
+        print("\t⚠️  Assurez-vous d'être connecté au réseau avant de lancer un scan.")
     
         
     scanner = Scanner(
@@ -455,7 +480,7 @@ if __name__ == '__main__':
                 f.write("\n".join(results) + "\n")
 
     if args.scan_os:
-        print(f"\nDétection de l'OS de la cible {args.Target}")
+        print(f"\n\nDétection de l'OS de la cible {args.Target}")
         results = scanner.os_scan()
         if args.output:
             with open(output_file, "a") as f:
@@ -474,13 +499,13 @@ if __name__ == '__main__':
         if not args.Target:
             print("\n\t❌ Erreur : Vous devez spécifier une cible pour scanner un port spécifique (ex: python3 astsu.py 192.168.1.1 -sP 80\n")
             sys.exit(1)
-        print(f"\n🔍 Scan du port {args.scan_port} sur {args.Target}")
+        print(f"\n\tScan du port {args.scan_port} sur {args.Target}")
         
         scanner.target = args.Target
         result = scanner.port_scan(port=args.scan_port, stealth=args.stealth)
         if result:
             for port, status in result.items():
-                print(f"\n\t✅ Port: {port} - {status}\n")
+                print(f"\n\t\tPort: {port} - {status}\n")
             
             if args.output:
                 with open(output_file, "a") as f:

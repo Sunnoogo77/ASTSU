@@ -15,6 +15,10 @@ def scan(target, interface=None):
         else:
             ans, uns = scapy.sr(icmp_pkt, retry=5, timeout=3, inter=1, verbose=0)
         
+        if len(ans) == 0:
+            print(" ICMP bloqué. Possible firewall détecté !")
+            return "Firewall détecté"
+        
         try:
             target_ttl = ans[0][1].ttl
         except:
@@ -38,7 +42,14 @@ def scan(target, interface=None):
                 detected_os += " - (TCP stack analysé)"
             elif flags == 0x14: #RST-ACK reçu
                 detected_os += " - (TCP stack detecté)"
-                
+        
+        tcp_ack_pkt = scapy.IP(dst=target) / scapy.TCP(dport=80, flags='A')  # "A" = ACK
+        ack_resp = scapy.sr1(tcp_ack_pkt, timeout=3, verbose=0)
+
+        if ack_resp is None:
+            print("⚠️  Aucun retour au paquet ACK. Un firewall filtre peut-être les connexions.")
+            return detected_os + " - Firewall détecté"
+            
         return detected_os
     
     except Exception as e:
