@@ -27,8 +27,8 @@ clear = lambda:os.system('cls' if os.name == 'nt' else 'clear')
 __version__ = "v1.1.4"
 
 class Scanner:
-    def __init__(self, target=None, my_ip=None, protocol=None, timeout=5, interface=None):
-        self.target = target
+    def __init__(self, target=None, my_ip=None, protocol=None, timeout=5, interface=None, port=None):
+        self.target = args.Target if args.Target else target
         self.my_ip = my_ip
         self.protocol = protocol
         self.timeout = args.timeout if args.timeout else 5
@@ -44,6 +44,7 @@ class Scanner:
             
             
             if scan is None:
+                print(f"⚠️  Machine {self.target} semble éteinte ou injoignable.")
                 return {port: 'Filtered'}
             
             elif scan.haslayer(scapy.TCP):
@@ -65,7 +66,9 @@ class Scanner:
                 scan = scapy.sr1(pkt, timeout=self.timeout, verbose=0)
                 
                 if scan == None:
+                    print(f"⚠️  Machine {self.target} semble éteinte ou injoignable.")
                     return {port: 'Filtered'}
+                
                 elif scan.haslayer(scapy.TCP):
                     if scan.getlayer(scapy.TCP).flags == 0x12: #0x12 Syn+Ack
                         pkt = scapy.IP(dst=self.target)/scapy.TCP(dport=port, flags="AR")
@@ -79,13 +82,16 @@ class Scanner:
                 scan = scapy.sr1(pkt, timeout=self.timeout, verbose=0)
                 
                 if scan ==  None:
+                    print(f"⚠️  Machine {self.target} semble éteinte ou injoignable.")
                     return {port: 'Open/Filtered'}
+                
                 elif scan.haslayer(scapy.UDP):
                     return {port: 'Closed'}
                 elif scan.haslayer(scapy.ICMP):
                     if int(scan.getlayer(scapy.ICMP).type) == 3 and int(scan.getlayer(scapy.ICMP).code) == 3:
                         return {port: 'Closed'}
-                
+    # def scan_port(self, stealth=None, target, port):
+        
     def handle_port_response(self, ports_saved, response, port):
         open_port = ports_saved['open']
         filtered_ports = ports_saved['filtered']
@@ -143,40 +149,45 @@ class Scanner:
                 open_ports, filtered_ports, open_or_filtered_ports, closed_ports = self.handle_port_response(
                     ports_saved=ports_saved, response=scan, port=port
                 )
-                
-                    
-                #Ajout des resultats formaté dans le fichier de sortie
-                for status, ports_list in[
-                    ("Open", open_ports), 
-                    ("Filtered", filtered_ports), 
-                    ("Open/Filtered", open_or_filtered_ports),
-                    ("Closed", closed_ports)
-                ]:
-                    for port in ports_list:
-                        results_for_file.append(f"Port: {port} - {status}")
-
         
+        sorted_results = sorted(
+            [(port, "Open") for port in open_ports] +
+            [(port, "Filtered") for port in filtered_ports] +
+            [(port, "Open/Filtered") for port in open_or_filtered_ports] +
+            [(port, "Closed") for port in closed_ports],
+            key=lambda x: x[0]  # Trie par numéro de port
+        )
+
+        for i in range(len(sorted_results)):
+            port, status = sorted_results[i]
+            results_for_file.append(f"Port: {port} - {status}")
+                    
         total = len(open_ports) + len(filtered_ports) + len(open_or_filtered_ports) + len(closed_ports)
         print(f"\n\t ✅ Scan terminé :{total} ports analysés dont : ")
         print(f"\t\t{len(open_ports)} - Open")
-        print(f"\t\t{len(closed_ports)} - Closed\n")
+        print(f"\t\t{len(closed_ports)} - Closed")
+        print(f"\t\t{len(filtered_ports)} - Filtered")
+        print(f"\t\t{len(open_or_filtered_ports)} - Open/Filtered\n")
         
             
         return results_for_file
-    
+        
     def range_scan(self, start, end=None, stealth=None, sv=None):
         
         open_ports = []
         filtered_ports = []
         open_or_filtered_ports = []
+        closed_ports = []
         protocol = self.protocol if self.protocol else "TCP"
         
+        results_for_file = []
+        
         if protocol == "TCP" and stealth:
-            logging.info("\n\tDémarrage - Analyse furtive des ports TCP\n")
+            print("\n\n\tDémarrage - Scan furtif des ports --> TCP <--\n\n")
         elif protocol == "TCP" and not stealth:
-            logging.info("\n\tDémarrage - Analyse du port de connexion TCP\n")
+            print("\n\n\tDémarrage - Analyse des port --> TCP <--\n\n")
         elif protocol == "UDP":
-            logging.info("\n\tDémarrage - Scan du port UDP\\n")
+            print("\n\n\tDémarrage - Scan du port --> UDP <-- \n\n")
         else:
             pass
             
@@ -192,31 +203,44 @@ class Scanner:
                 ports_saved = {
                     "open": open_ports,
                     "filtered": filtered_ports,
-                    "open/filtered": open_or_filtered_ports
+                    "open/filtered": open_or_filtered_ports,
+                    "closed": closed_ports
                 }
 
-                open_ports, filtered_ports, open_or_filtered_ports = self.handle_port_response(
+                open_ports, filtered_ports, open_or_filtered_ports, closed_ports= self.handle_port_response(
                     ports_saved=ports_saved, response=scan, port=port
                 )
+        sorted_results = sorted(
+            [(port, "Open") for port in open_ports] +
+            [(port, "Filtered") for port in filtered_ports] +
+            [(port, "Open/Filtered") for port in open_or_filtered_ports] +
+            [(port, "Closed") for port in closed_ports],
+            key=lambda x: x[0]
+        )
+        
+        for i in range(len(sorted_results)):
+            port, status = sorted_results[i]
+            results_for_file.append(f"Port: {port} - {status}")
 
-        total = len(open_ports) + len(filtered_ports) + len(open_or_filtered_ports)
-        logging.info(f"Scan terminé : {total} ports analysés.")
-
-        for port in open_ports:
-            logging.info(f"Port: {port} - Open")
-        for port in filtered_ports:
-            logging.warning(f"Port: {port} - Filtered")
-        for port in open_or_filtered_ports:
-            logging.info(f"Port: {port} - Open/Filtered")
+        total = len(open_ports) + len(filtered_ports) + len(open_or_filtered_ports) + len(closed_ports)
+        print(f"\n\t ✅ Scan terminé :{total} ports analysés dont : ")
+        print(f"\t\t{len(open_ports)} - Open")
+        print(f"\t\t{len(closed_ports)} - Closed")
+        print(f"\t\t{len(filtered_ports)} - Filtered")
+        print(f"\t\t{len(open_or_filtered_ports)} - Open/Filtered\n")
+    
+        return results_for_file
 
     def os_scan(self):
         target_os = os_detection.scan(self.target)
-
+        target_os_str = ''
         if target_os:
-            logging.info(f"[INFO] Système d'exploitation détecté : {target_os}")
+            print(f"\n\tSystème d'exploitation détecté : {target_os}\n")
+            target_os_str = "OS detected : " + str(target_os)
         else:
-            logging.warning("[[red]-[/red]] [ERROR] Impossible de détecter le système d'exploitation")
-
+            print("\n\t[[red]-[/red]] [ERROR] Impossible de détecter le système d'exploitation\n")
+        return target_os_str
+    
     def send_icmp(self, target, result, index):
         target = str(target)
         host_found = []
@@ -229,10 +253,43 @@ class Scanner:
 
     def service_scan(self, target):
         open_ports = [21, 22, 80, 433, 3306, 8080]
+        results = []
         
         for port in open_ports:
             service = service_detection.scan_service(target, port)
-            logging.info(f"Port {port} : {service}")
+            
+            if service:
+                
+                if isinstance(service, list): 
+                    formatted_service = ", ".join(map(str, service))
+                elif isinstance(service, tuple):
+                    formatted_service = ", ".join(map(str, service)) 
+                elif isinstance(service, dict):
+                    formatted_service = ", ".join([f"{key}:{value}" for key, value in service.items()])
+                else: 
+                    formatted_service = str(service).replace('\n', ' ').replace('\r', ' ')
+                
+                if port < 99:
+                    print(f"Port {port}   : {formatted_service}")
+                    results.append(f"Port {port} : {formatted_service}")
+                elif port > 99 and port < 999:
+                    print(f"Port {port}  : {formatted_service}")
+                    results.append(f"Port {port} : {formatted_service}")
+                elif port > 999:
+                    print(f"Port {port} : {formatted_service}")
+                    results.append(f"Port {port} : {formatted_service}")
+            else:
+                if port < 99:
+                    print(f"Port {port}   : -")
+                    results.append(f"Port {port}   : -")
+                elif port > 99 and port < 999:
+                    print(f"Port {port}  : -")
+                    results.append(f"Port {port}  : -")
+                elif port > 999:
+                    print(f"Port {port} : -")
+                    results.append(f"Port {port} : -")
+                    
+        return results
         
     def discover_net(self, ip_range=24, max_threads=50):  # Ajout d'une limite de threads
         protocol = self.protocol or "ICMP"
@@ -269,11 +326,11 @@ class Scanner:
         # Gestion des threads
         threads = []
         for i, host in enumerate(hosts):
-            semaphore.acquire()  # Bloque si trop de threads sont en cours
+            semaphore.acquire()
 
             def worker(target_host, index):
                 self.send_icmp(target_host, results, index)
-                semaphore.release()  # Libère un slot après exécution
+                semaphore.release()  
 
             t = Thread(target=worker, args=(host, i))
             t.start()
@@ -281,9 +338,9 @@ class Scanner:
 
         for t in threads:
             t.join()
-            bar.next()  # Mise à jour de la barre de progression
+            bar.next()  
 
-        bar.finish()  # Fin de la barre de progression
+        bar.finish()  
 
         # Résultat final
         hosts_found = [i for i in results if i is not None]
@@ -306,9 +363,10 @@ def arguments():
     )
     
     #Optionq de scan
-    parser.add_argument('-sC', '--scan-common', help="Scan des ports courants", action="store_true")        
-    parser.add_argument('-sA', '--scan-all', help="Scan de tous les ports (0-65535)", action="store_true")
-    parser.add_argument('-d', '--discover', help="Découverte des hôtes sur le réseau", action="store_true") 
+    parser.add_argument('-sC', '--scan-common', help="Scan des ports courants", action="count")        
+    parser.add_argument('-sA', '--scan-all', help="Scan de tous les ports (0-65535)", action="count")
+    parser.add_argument('-sP', '--scan_port', help="Scan d'un port spécifique", type=int)
+    parser.add_argument('-d', '--discover', help="Découverte des hôtes sur le réseau", action="count") 
     parser.add_argument('-sO', '--scan-os', help="detection de l'OS", action="store_true")
     parser.add_argument('-sV', '--scan-service', help="Détection des services actifs", action="store_true")
     
@@ -326,7 +384,7 @@ def arguments():
     args = parser.parse_args()
     
     #Verification des arguments (affiche l'aide si aucun argument est scpécifié)
-    if not (args.scan_common or args.scan_all or args.discover or args.scan_os or args.scan_service or args.version):
+    if not (args.scan_common or args.scan_all or args.discover or args.scan_os or args.scan_service or args.version or args.scan_port):
         parser.print_help()
         sys.exit(1)
     
@@ -339,15 +397,18 @@ def arguments():
 
 if __name__ == '__main__':
     args, parser = arguments()
-    
+
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8",80))
         ip = s.getsockname()[0]
         s.close()
-        
-    except ValueError as e :
-        logging.critical(f"[ERROR] Erreur avec l'adresse IP fournie : {e}")
+    except OSError:
+        ip = "0.0.0.0"
+        print("\n")
+        logging.warning("⚠️  Connexion Internet absente. L'adresse IP locale ne peut pas être détectée.")
+        logging.warning("⚠️  Assurez-vous d'être connecté au réseau avant de lancer un scan.")
+    
         
     scanner = Scanner(
         target=args.Target,
@@ -359,7 +420,7 @@ if __name__ == '__main__':
     
     if args.version:
         print("\n")
-        logging.info(f"\t ASTU Version: {__version__}")
+        print(f"\t ASTU Version: {__version__}")
         print("\n")
         sys.exit(0) 
     
@@ -367,26 +428,25 @@ if __name__ == '__main__':
         output_file = args.output
         with open(output_file, "w") as f:
             f.write("\t\t===== ASTU Scan Report =====\n\n")
-        # logging.info(f"[INFO] Les résultats seront enregistrés dans : {output_file}")
 
-
-    print("\n\tBienvenue dans ASTU - Advanced Network Scanner 🚀\n")
+    # print("\n\tBienvenue dans ASTU - Advanced Network Scanner 🚀\n")
 
     if args.scan_common:
-        print(f"Scan des ports courants sur {args.Target}")
+        print(f"\n\tScan des ports courants sur {args.Target}")
         results = scanner.common_scan(stealth=args.stealth)
         if args.output:
             with open(output_file, "a") as f:
-                f.write("\n".join(set(results)) + "\n")
-
-
+                f.write("\tCommon_scan results\n\n")
+                f.write("\n".join(results) + "\n")
+                
     if args.scan_all:
-        logging.info(f"Scan de tous les ports sur {args.Target}")
+        print(f"\n\tScan de tous les ports sur {args.Target}")
         results = scanner.range_scan(start=0, end=65535, stealth=args.stealth)
         if args.output:
             with open(output_file, "a") as f:
+                f.write("\tScan_All results\n\n")
                 f.write("\n".join(results) + "\n")
-                
+                            
     if args.discover:
         logging.info("Découverte des hôtes sur le réseau local")
         results = scanner.discover_net()
@@ -395,15 +455,34 @@ if __name__ == '__main__':
                 f.write("\n".join(results) + "\n")
 
     if args.scan_os:
-        logging.info(f"Détection de l'OS de la cible {args.Target}")
+        print(f"\nDétection de l'OS de la cible {args.Target}")
         results = scanner.os_scan()
+        if args.output:
+            with open(output_file, "a") as f:
+                f.write("\tOS detection Results results\n\n")
+                f.write(results)
+
+    if args.scan_service:
+        print(f"\n\n\tDétection des services actifs sur {args.Target}\n")
+        results = scanner.service_scan(args.Target)
+        print("\n")
         if args.output:
             with open(output_file, "a") as f:
                 f.write("\n".join(results) + "\n")
 
-    if args.scan_service:
-        logging.info(f"Détection des services actifs sur {args.Target}")
-        results = scanner.service_scan(args.Target)
-        if args.output:
-            with open(output_file, "a") as f:
-                f.write("\n".join(results) + "\n")
+    if args.scan_port:
+        if not args.Target:
+            print("\n\t❌ Erreur : Vous devez spécifier une cible pour scanner un port spécifique (ex: python3 astsu.py 192.168.1.1 -sP 80\n")
+            sys.exit(1)
+        print(f"\n🔍 Scan du port {args.scan_port} sur {args.Target}")
+        
+        scanner.target = args.Target
+        result = scanner.port_scan(port=args.scan_port, stealth=args.stealth)
+        if result:
+            for port, status in result.items():
+                print(f"\n\t✅ Port: {port} - {status}\n")
+            
+            if args.output:
+                with open(output_file, "a") as f:
+                    f.write("\tPort_Scan results\n\n")
+                    f.write(f"Port : {args.scan_port} - {status}")

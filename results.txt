@@ -1,0 +1,8 @@
+		===== ASTU Scan Report =====
+
+Port 21   : -
+Port 22   : -
+Port 80   : -
+Port 433  : -
+Port 3306 : [ERREUR] [WinError 10053] Une connexion établie a été abandonnée par un logiciel de votre ordinateur hôte
+Port 8080 : -
