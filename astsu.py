@@ -14,12 +14,31 @@ from queue import Queue
 import socket
 import logging
 import warnings
+import textwrap
+
+try :
+    from colorama import Fore, Style, init
+    import rpycolors
+    use_rpycolors = True
+except ImportError:
+    use_rpycolors = False
+
 warnings.simplefilter("ignore", category=SyntaxWarning)
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 
-# from colorama import Foreimport rpycolorlors
-# old_print = printprint = rpycolors.Consolo().print
+init(autoreset=True)
 
+WHITE   = Fore.WHITE
+BLACK   = Fore.BLACK
+RED     = Fore.RED
+RESET   = Fore.RESET
+BLUE    = Fore.BLUE
+CYAN    = Fore.CYAN
+YELLOW  = Fore.YELLOW
+GREEN   = Fore.GREEN
+MAGENTA = Fore.MAGENTA
+
+__version__ = "v1.1.4"
 
 # Configuration des logs
 logging.basicConfig(
@@ -29,8 +48,54 @@ logging.basicConfig(
 
 clear = lambda:os.system('cls' if os.name == 'nt' else 'clear')
 
-__version__ = "v1.1.4"
+def print_banner(fast_mode=False):
+    clear()
+    
+    ascii_logo = textwrap.dedent(f"""
+        {RED} .d8b.  .d8888. d888888b .d8888. db    db{RESET}
+        {RED}d8' `8b 88'  YP `~~88~~' 88'  YP 88    88{RESET}
+        {RED}88ooo88 `8bo.      88    `8bo.   88    88{RESET}
+        {RED}88~~~88   `Y8b.    88      `Y8b. 88    88{RESET}
+        {RED}88   88 db   8D    88    db   8D 88b  d88{RESET}
+        {RED}YP   YP `8888Y'    YP    `8888Y' ~Y8888P'{RESET}
 
+
+        {CYAN}Github:{RESET} https://github.com/Sunnoogo77/ASTSU
+        {CYAN}By:{RESET} {YELLOW}Sunnoogo77
+        {CYAN}Version:{RESET} {__version__}
+        
+        {GREEN} \t    ----------------------
+        
+        {GREEN}------------------------------------------------
+        {CYAN}Inspired from :{RESET} https://github.com/ReddyyZ/astsu
+        {CYAN}By:{RESET} ReddyyZ
+        {GREEN}------------------------------------------------
+        
+        """)
+    
+    border = f"{YELLOW}{'=' * 50}{RESET}"
+    msg = f"\n{CYAN}[INFO]{RESET} Démarrage de ASTSU...\n"
+    message = f"{RED}\tBienvenue dans ASTSU \nAdvanced Security Testing and Scanning Utility{RESET}"
+    
+    if use_rpycolors:
+        console_print = rpycolors.Console().print
+    else:
+        console_print = print
+    
+    console_print(border)
+    console_print(ascii_logo)
+    console_print(border)
+    console_print(msg)
+    console_print(message)
+    console_print(border)
+    
+    if not fast_mode:
+        try:
+            sleep(2)
+        except KeyboardInterrupt:
+            print("\n")
+            sys.exit(0)
+    
 class Scanner:
     def __init__(self, target=None, my_ip=None, protocol=None, timeout=5, interface=None, port=None):
         self.target = args.Target if args.Target else target
@@ -326,7 +391,7 @@ class Scanner:
             return False
 
         try:
-            print(f"\n\n\t🔍 Démarrage - Découverte des hôtes sur le réseau local\n")
+            print(f"\n\n\t🔍 Démarrage - Découverte des hôtes sur le réseau [ Interface : {args.interface} ]\n\n")
             
             base_ip_parts = self.my_ip.split('.')
             if len(base_ip_parts) != 4:
@@ -336,9 +401,10 @@ class Scanner:
             base_ip = f"{base_ip_parts[0]}.{base_ip_parts[1]}.{base_ip_parts[2]}.0/{ip_range}"
             network = ipaddress.ip_network(base_ip, strict=False)
             hosts = list(network.hosts())
+            
 
         except ValueError as e:
-            logging.critical(f"[ERROR] Erreur avec l'adresse IP fournie : {e}")
+            print(f"[ERROR] Erreur avec l'adresse IP fournie : {e}\n")
             return False
 
         # Utilisation de ThreadPoolExecutor pour le multitâche
@@ -348,7 +414,6 @@ class Scanner:
             
             
             futures = [executor.submit(self.send_icmp, host, results_queue) for host in hosts]
-            # sys.stdout = None
             bar.start()
             
             for _ in concurrent.futures.as_completed(futures):
@@ -366,18 +431,27 @@ class Scanner:
         
 
         # Affichage des résultats triés
-        if hosts_found:
-            hosts_found.sort()  # Trier les IP trouvées dans l'ordre
-            print(f"\n\t{len(hosts_found)} hôtes actifs trouvés :\n")
-            for host in hosts_found:
-                print(f"  ➜   {host}")
-            print("\n")
-        else:
+        if not hosts_found:
             print("\n⚠️ Aucun hôte actif trouvé.")
             print("🔹 Vérifiez que les machines sont allumées.")
             print("🔹 Vérifiez si le pare-feu bloque les requêtes ICMP.")
-
-        return hosts_found
+            return []
+        
+        hosts_found.sort()  # Trier les IP trouvées dans l'ordre
+        print(f"\n\t-----{len(hosts_found)} Hôtes Actifs Trouvés-----\n")
+        
+        hosts_found_tuple = []
+        for host in hosts_found:
+            try:
+                hostname, _, _ = socket.gethostbyaddr(host)
+            except socket.herror:
+                hostname = "N/A - Hostname not found"
+                
+            print(f"\t{host}  ➜   {hostname}")
+            hosts_found_tuple.append((host, hostname))
+        print("\n")
+        
+        return hosts_found_tuple
 
 
 def arguments():
@@ -422,6 +496,7 @@ def arguments():
 if __name__ == '__main__':
     args, parser = arguments()
     
+    print_banner()
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8",80))
@@ -472,15 +547,13 @@ if __name__ == '__main__':
                 f.write("\n".join(results) + "\n")
                             
     if args.discover:
-        print("\n\n\tDécouverte des hôtes sur le réseau local\n")
         results = scanner.discover_net()
         if args.output:
             with open(output_file, "a") as f:
                 f.write("\n\t--Network Scan Result--\n\n")
                 for line in results:
                     f.write(f"{line} \n")
-                
-
+                f.write("\n")
     if args.scan_os:
         print(f"\n\nDétection de l'OS de la cible {args.Target}")
         results = scanner.os_scan()

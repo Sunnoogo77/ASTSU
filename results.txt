@@ -3,10 +3,11 @@
 
 	--Network Scan Result--
 
-192.168.200.1 
-192.168.200.102 
-192.168.200.119 
-192.168.200.132 
-192.168.200.148 
-192.168.200.152 
-192.168.200.2 
+('172.27.49.156', 'N/A - Hostname not found') 
+('172.27.49.169', 'N/A - Hostname not found') 
+('172.27.49.233', 'N/A - Hostname not found') 
+('172.27.49.234', 'Sunnogo_Caleb') 
+('172.27.49.238', 'N/A - Hostname not found') 
+('172.27.49.251', 'N/A - Hostname not found') 
+('172.27.49.252', 'N/A - Hostname not found') 
+
