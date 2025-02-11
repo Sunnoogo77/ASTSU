@@ -166,26 +166,32 @@ def port_scan(self, stealth=None, port=80):
 ### **A) Mode Stealth (TCP SYN Scan)**  
 ```python
 if stealth:
-    pkt = IP(dst=self.target) / TCP(dport=port, flags="S")
-    scan = sr1(pkt, timeout=self.timeout, verbose=0)
+    pkt = scapy.IP(dst=self.target) / scapy.TCP(dport=port, flags="S")
+    scan = scapy.sr1(pkt, timeout=self.timeout, verbose=0)
 ```
 - **Construction du paquet :**  
-  - `IP(dst=self.target)` → Définition de l’IP de destination.  
-  - `TCP(dport=port, flags="S")` → Paquet TCP avec le **flag SYN** activé.  
+  - `scapy.IP(dst=self.target)` → Définition de l’IP de destination.  
+  - `scapy.TCP(dport=port, flags="S")` → Paquet TCP avec le **flag SYN** activé.  
 - **Envoi du paquet :**  
-  - `sr1()` → Envoie le paquet et attend une réponse (1 réponse attendue).  
+  - `scapy.sr1()` → Envoie le paquet et attend une réponse (1 réponse attendue).  
 
 #### **Analyse des réponses :**  
 ```python
 if scan is None:
     return {port: 'Filtered'}
-elif scan.haslayer(TCP):
-    if scan.getlayer(TCP).flags == 0x12:  # SYN-ACK
-        pkt = IP(dst=self.target) / TCP(dport=port, flags="R")
-        sr(pkt, timeout=self.timeout, verbose=0)
+
+elif scan.haslayer(scapy.TCP):
+    if scan.getlayer(scapy.TCP).flags == 0x12: # 0x12 SYN+ACk
+        pkt = scapy.IP(dst=self.target) / scapy.TCP(dport = port, flags="R")
+        send_rst = scapy.sr(pkt, timeout=self.timeout, verbose=0)
         return {port: 'Open'}
-    elif scan.getlayer(TCP).flags == 0x14:  # RST-ACK
+    
+    elif scan.getlayer(scapy.TCP).flags == 0x14:
         return {port: 'Closed'}
+    
+elif scan.getlayer(scapy.ICMP):
+    if scan.getlayer(scapy.ICMP).type == 3 and int(scan.getlayer(scapy.ICMP).code in [1,2,3,9,10,13]):
+        return {port: 'Filtered'}
 ```
 - **Pas de réponse →** Port probablement **filtré**.  
 - **Réponse SYN-ACK (0x12) →** Port **ouvert**. On envoie un **RST** pour couper la connexion.  
@@ -198,8 +204,8 @@ elif scan.haslayer(TCP):
 ### **B) Mode TCP Connect (Scan Complet)**  
 ```python
 if protocol == "TCP":
-    pkt = IP(dst=self.target) / TCP(dport=port, flags="S")
-    scan = sr1(pkt, timeout=self.timeout, verbose=0)
+    pkt = scapy.IP(dst=self.target)/scapy.TCP(dport=port, flags="S")
+    scan = scapy.sr1(pkt, timeout=self.timeout, verbose=0)
 ```
 Ce bloc est similaire au mode stealth, sauf qu’il semble incomplet ici car ASTU continue d’envoyer des paquets RST. Cependant, en pratique, un **TCP Connect** utiliserait `socket` pour établir une vraie connexion.  
 
@@ -212,8 +218,8 @@ Ce bloc est similaire au mode stealth, sauf qu’il semble incomplet ici car AST
 ### **C) Mode UDP Scan**  
 ```python
 elif protocol == "UDP":
-    pkt = IP(dst=self.target) / UDP(dport=port)
-    scan = sr1(pkt, timeout=self.timeout, verbose=0)
+    pkt = scapy.IP(dst=self.target)/scapy.UDP(dport=port)
+    scan = scapy.sr1(pkt, timeout=self.timeout, verbose=0)
 ```
 - Envoi d’un paquet UDP simple.  
 - Analyse des réponses :  
@@ -230,23 +236,27 @@ Cette fonction classe les résultats des scans en fonction de l’état des port
 ### **Code :**  
 ```python
 def handle_port_response(self, ports_saved, response, port):
-    open_ports = ports_saved['open']
+    open_port = ports_saved['open']
     filtered_ports = ports_saved['filtered']
     open_or_filtered = ports_saved['open/filtered']
-
-    if response[port] == "Closed":
-        logging.warning(f"Port: {port} - Closed")
-    elif response[port] == "Open":
-        logging.info(f"Port: {port} - Open")
-        open_ports.append(port)
-    elif response[port] == "Filtered":
-        logging.warning(f"Port: {port} - Filtered")
+    closed_ports = ports_saved['closed']
+    
+    if response[port] == 'Closed':
+        print(f"[CLOSED]      ------> Port {port}")
+        closed_ports.append(port)
+    elif response[port] == 'Open':
+        print(f"[OPEN]        ------> Port {port}")
+        open_port.append(port)
+    elif response[port] == 'Filtered':
+        print(f"[FILTERED]     -----> Port {port}")
         filtered_ports.append(port)
-    elif response[port] == "Open/Filtered":
-        logging.info(f"Port: {port} - Open/Filtered")
+    elif response[port] == 'Open/Filtered':
+        print(f"[OPEN/FILTERED]  --> Port {port}")
         open_or_filtered.append(port)
-
-    return (open_ports, filtered_ports, open_or_filtered)
+    else:
+        pass
+    
+    return open_port, filtered_ports, open_or_filtered, closed_ports
 ```
 
 ### **Fonctionnement :**  
@@ -265,6 +275,7 @@ Cette fonction automatise le scan des ports les plus utilisés.
 ### **Code :**  
 ```python
 def common_scan(self, stealth=None, sv=None):
+    protocol = self.protocol if self.protocol else "TCP"
     ports = [21, 22, 80, 443, 3306, 14147, 2121, 8080, 8000]
 ```
 - Liste des **ports courants** : FTP (21), SSH (22), HTTP (80), HTTPS (443), MySQL (3306), etc.  
@@ -280,9 +291,16 @@ Permet de scanner une **plage de ports** personnalisée.
 ### **Code :**  
 ```python
 def range_scan(self, start, end=None, stealth=None, sv=None):
+    ....
+    ....
+    
     if end:
-        for port in range(start, end):
-            scan = self.port_scan(stealth, port=port)
+        ports = range(start, end + 1)
+    else:
+        ports = [start]
+
+    for port in ports:
+        scan = self.port_scan(port=port, stealth=stealth)
 ```
 - Si `end` est défini → scan de la plage `start` à `end`.  
 - Sinon, scan d’un seul port (`start`).  
@@ -304,221 +322,321 @@ La **découverte de réseau** est une étape cruciale lors d’un pentest ou d�
 
 ### 📄 **Code :**  
 ```python
-def discover_net(self, ip_range=24):
-    protocol = self.protocol
-    base_ip = self.my_ip
+def discover_net(self, ip_range=24, max_threads=50):
+        protocol = self.protocol if self.protocol else "ICMP"
 
-    if not protocol:
-        protocol = "ICMP"
-    else:
         if protocol != "ICMP":
-            logging.warning(f"Warning: {protocol} is not supported by discover_net function! Changed to ICMP")
+            print(f"\n\n❌ [WARNING] {protocol} n'est pas supporté ! Utilisation forcée d'ICMP.\n")
+            print("❌ [ERROR] Protocole invalide pour ce scan.\n\n")
+            return False
 
-    if protocol == "ICMP":
-        logging.info("Starting - Discover Hosts Scan")
+        try:
+            print(f"\n\n\t🔍 Démarrage - Découverte des hôtes sur le réseau [ Interface : {args.interface} ]\n\n")
+            
+            base_ip_parts = self.my_ip.split('.')
+            if len(base_ip_parts) != 4:
+                logging.critical("[ERROR] Adresse IP locale invalide !")
+                return False
 
-        base_ip = base_ip.split('.')
-        base_ip = f"{str(base_ip[0])}.{str(base_ip[1])}.{str(base_ip[2])}.0/{str(ip_range)}"
+            base_ip = f"{base_ip_parts[0]}.{base_ip_parts[1]}.{base_ip_parts[2]}.0/{ip_range}"
+            network = ipaddress.ip_network(base_ip, strict=False)
+            hosts = list(network.hosts())
+            
 
-        hosts = list(ipaddress.ip_network(base_ip))
-        bar = ChargingBar("Scanning...", max=len(hosts))
+        except ValueError as e:
+            print(f"[ERROR] Erreur avec l'adresse IP fournie : {e}\n")
+            return False
 
-        sys.stdout = None
-        bar.start()
+        # Utilisation de ThreadPoolExecutor pour le multitâche
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+            results_queue = Queue()
+            bar = ChargingBar("[INFO] Scan en cours...", max=len(hosts))
+            
+            
+            futures = [executor.submit(self.send_icmp, host, results_queue) for host in hosts]
+            bar.start()
+            
+            for _ in concurrent.futures.as_completed(futures):
+                bar.next()
+            bar.finish()
+            print("\n")
 
-        threads = [None] * len(hosts)
-        results = [None] * len(hosts)
+            # Récupération des résultats
+            hosts_found = []
+            while not results_queue.empty():
+                result = results_queue.get()
+                if result:
+                    hosts_found.append(result)
+        
+        
 
-        for i in range(len(threads)):
-            threads[i] = Thread(target=self.send_icmp, args=(hosts[i], results, i))
-            threads[i].start()
-
-        for i in range(len(threads)):
-            threads[i].join()
-            bar.next()
-
-        bar.finish()
-        sys.stdout = sys.__stdout__
-
-        hosts_found = [i for i in results if i is not None]
-
+        # Affichage des résultats triés
         if not hosts_found:
-            logging.warning('Not found any host')
-        else:
-            logging.info(f'{len(hosts_found)} hosts found')
-            for host in hosts_found:
-                logging.info(f'Host found: {host}')
-
-        return True
-    else:
-        logging.critical("Invalid protocol for this scan")
-        return False
+            print("\n⚠️ Aucun hôte actif trouvé.")
+            print("🔹 Vérifiez que les machines sont allumées.")
+            print("🔹 Vérifiez si le pare-feu bloque les requêtes ICMP.")
+            return []
+        
+        hosts_found.sort()  # Trier les IP trouvées dans l'ordre
+        print(f"\n\t-----{len(hosts_found)} Hôtes Actifs Trouvés-----\n")
+        
+        hosts_found_tuple = []
+        for host in hosts_found:
+            try:
+                hostname, _, _ = socket.gethostbyaddr(host)
+            except socket.herror:
+                hostname = "N/A - Hostname not found"
+                
+            print(f"\t{host}  ➜   {hostname}")
+            hosts_found_tuple.append((host, hostname))
+        print("\n")
+        
+        return hosts_found_tuple
 ```
-
 ---
 
 ### 🧩 **Analyse de la Logique**
 
-1. **Définition du Protocole (ICMP par défaut) :**  
-   ```python
-   if not protocol:
-       protocol = "ICMP"
-   ```
-   - Si aucun protocole n’est défini, ASTU utilise ICMP par défaut.  
-   - Si un autre protocole est spécifié (TCP/UDP), il affiche un avertissement et repasse à ICMP.  
+1. **Définition du Protocole (ICMP par défaut) :**
 
-2. **Génération de la Plage d’Adresses IP :**  
-   ```python
-   base_ip = base_ip.split('.')
-   base_ip = f"{base_ip[0]}.{base_ip[1]}.{base_ip[2]}.0/{ip_range}"
-   hosts = list(ipaddress.ip_network(base_ip))
-   ```
-   - ASTU convertit l’adresse IP locale en une **plage de type `/24`** (par défaut), ce qui correspond à 256 adresses IP.  
-   - Utilisation du module `ipaddress` pour générer toutes les adresses de la plage.  
+    ```python
+    protocol = self.protocol if self.protocol else "ICMP"
 
-   **Exemple :**  
-   - IP locale = `192.168.1.34` → ASTU va scanner de `192.168.1.0` à `192.168.1.255`.  
+    if protocol != "ICMP":
+        print(f"\n\n❌ [WARNING] {protocol} n'est pas supporté ! Utilisation forcée d'ICMP.\n")
+        print("❌ [ERROR] Protocole invalide pour ce scan.\n\n")
+        return False
+    ```
 
-3. **Barre de Progression :**  
-   ```python
-   bar = ChargingBar("Scanning...", max=len(hosts))
-   bar.start()
-   ```
-   - Utilisation de la bibliothèque `progress` pour afficher une barre de progression pendant le scan.  
+    - Si aucun protocole n'est défini, ASTU utilise ICMP par défaut.
+    - Si un autre protocole est spécifié (TCP/UDP), ASTU affiche un avertissement et utilise ICMP.  Cette version du code ne permet plus l'utilisation d'un autre protocole que ICMP pour la découverte d'hôtes.
 
-4. **Scan Multi-threadé :**  
-   ```python
-   threads = [None] * len(hosts)
-   results = [None] * len(hosts)
+2. **Génération de la Plage d’Adresses IP :**
 
-   for i in range(len(threads)):
-       threads[i] = Thread(target=self.send_icmp, args=(hosts[i], results, i))
-       threads[i].start()
-   ```
-   - Chaque adresse IP est scannée dans un **thread séparé**.  
-   - Cela accélère le processus en envoyant plusieurs paquets ICMP en parallèle.  
-   - Le résultat de chaque thread est stocké dans la liste `results`.  
+    ```python
+    try:
+        print(f"\n\n\t Démarrage - Découverte des hôtes sur le réseau [ Interface : {args.interface} ]\n\n")
 
-5. **Collecte des Résultats :**  
-   ```python
-   hosts_found = [i for i in results if i is not None]
-   ```
-   - ASTU filtre les adresses IP qui ont répondu au ping.  
-   - Si des hôtes sont trouvés, ils sont affichés. Sinon, un message d’erreur est retourné.  
+        base_ip_parts = self.my_ip.split('.')
+        if len(base_ip_parts) != 4:
+            logging.critical("[ERROR] Adresse IP locale invalide !")
+            return False
+
+        base_ip = f"{base_ip_parts[0]}.{base_ip_parts[1]}.{base_ip_parts[2]}.0/{ip_range}"
+        network = ipaddress.ip_network(base_ip, strict=False) #strict=False permet d'éviter une erreur si l'ip est malformé
+        hosts = list(network.hosts())
+
+    except ValueError as e:
+        print(f"[ERROR] Erreur avec l'adresse IP fournie : {e}\n")
+        return False
+    ```
+
+    - ASTU récupère l'adresse IP locale (`self.my_ip`) et la convertit en une plage d'adresses IP au format CIDR (par exemple, `/24` par défaut).
+    - Utilisation du module `ipaddress` pour générer toutes les adresses IP de la plage.
+    - L'argument `strict=False` permet d'éviter une erreur si l'adresse IP fournie est malformée.
+    - Un bloc `try...except` permet de gérer les erreurs potentielles lors de la création du réseau IP.
+
+    **Exemple :**
+    - IP locale = `192.168.1.34` et `ip_range = 24` → ASTU va scanner de `192.168.1.1` à `192.168.1.254` (les adresses d'hôte dans le réseau 192.168.1.0/24).
+
+3. **Scan Multi-threadé :**
+
+    ```python
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+        results_queue = Queue()
+        bar = ChargingBar("[INFO] Scan en cours...", max=len(hosts))
+
+        futures = [executor.submit(self.send_icmp, host, results_queue) for host in hosts]
+        bar.start()
+
+        for _ in concurrent.futures.as_completed(futures):
+            bar.next()
+        bar.finish()
+        print("\n")
+    ```
+
+    - Utilisation de `concurrent.futures.ThreadPoolExecutor` pour gérer les threads. C'est une manière plus moderne et plus simple que de gérer les threads manuellement.
+    - Chaque adresse IP est scannée dans un thread séparé, ce qui accélère le processus.
+    - Les résultats sont stockés dans une `queue.Queue` pour éviter les problèmes de concurrence.
+    - Une barre de progression est affichée pendant le scan.  La barre de progression est mise à jour au fur et à mesure que les threads se terminent.  `concurrent.futures.as_completed(futures)` permet de récupérer les résultats des threads dans l'ordre de leur complétion.
+
+4. **Collecte et Affichage des Résultats :**
+
+    ```python
+    hosts_found = []
+    while not results_queue.empty():
+        result = results_queue.get()
+        if result:
+            hosts_found.append(result)
+
+    if not hosts_found:
+        print("\n⚠️ Aucun hôte actif trouvé.")
+        print(" Vérifiez que les machines sont allumées.")
+        print(" Vérifiez si le pare-feu bloque les requêtes ICMP.")
+        return []
+
+    hosts_found.sort()  # Trier les IP trouvées dans l'ordre
+    print(f"\n\t-----{len(hosts_found)} Hôtes Actifs Trouvés-----\n")
+
+    hosts_found_tuple = []
+    for host in hosts_found:
+        try:
+            hostname, _, _ = socket.gethostbyaddr(host)
+        except socket.herror:
+            hostname = "N/A - Hostname not found"
+
+        print(f"\t{host}  ➜   {hostname}")
+        hosts_found_tuple.append((host, hostname))
+    print("\n")
+
+    return hosts_found_tuple
+    ```
+
+    - Les résultats sont récupérés de la `results_queue`.
+    - Les adresses IP trouvées sont triées.
+    - Les noms d'hôte associés à chaque adresse IP sont recherchés à l'aide de `socket.gethostbyaddr()`.
+    - Les adresses IP et leurs noms d'hôte sont affichés.
+    - La fonction retourne une liste de tuples contenant les adresses IP et les noms d'hôte.
 
 ---
 
-### ✅ **Résultat attendu :**  
-Lors de l’exécution de la commande :  
+### ✅ **Résultat attendu :**
+
+Lors de l’exécution de la commande :
+
 ```bash
 astsu -d
-```  
-Tu obtiendras :  
-```
-[*] Starting - Discover Hosts Scan
-Scanning... |████████████████████████████████████████| 256/256
-[*] 3 hosts found
-[*] Host found: 192.168.1.1
-[*] Host found: 192.168.1.12
-[*] Host found: 192.168.1.34
 ```
 
+Tu obtiendras :
+
+```
+        🔍 Démarrage - Découverte des hôtes sur le réseau [ Interface : eth0 ]
+
+
+[INFO] Scan en cours... ████████████████████████████████ 100%
+
+
+
+        -----3 Hôtes Actifs Trouvés-----
+
+    192.168.1.1   ➜   MonOrdinateur
+    192.168.1.12  ➜   Serveur_Web
+    192.168.1.34  ➜   N/A - Hostname not found
+```
 ---
 
-## 📡 **3.2 Fonction `send_icmp()`**
+## 🚀 **3.2 Fonction `send_icmp()`**  
 
 ### 📄 **Code :**  
-```python
-def send_icmp(self, target, result, index):
-    target = str(target)
-    host_found = []
-    pkg = IP(dst=target) / ICMP()
-    answers, unanswered = sr(pkg, timeout=3, retry=2, verbose=0, iface=self.interface if self.interface else None)
-    answers.summary(lambda r: host_found.append(target))
 
-    if host_found:
-        result[index] = host_found[0]
+```python
+def send_icmp(self, target, results_queue):
+    target = str(target)
+
+    pkg = scapy.IP(dst=target) / scapy.ICMP()
+
+    answers, _ = scapy.sr(pkg, timeout=3, retry=2, verbose=0, iface=self.interface if self.interface else None)
+
+    if answers:
+        results_queue.put(target)
 ```
 
 ---
 
-### 🚀 **Analyse de la Logique**
+### 🔍 **Analyse du Code**  
 
-1. **Création du Paquet ICMP :**  
-   ```python
-   pkg = IP(dst=target) / ICMP()
-   ```
-   - Construction d’un paquet ICMP de type **Echo Request** (comme la commande `ping`).  
-   - `IP(dst=target)` définit l’adresse de destination.  
-   - `ICMP()` ajoute l’en-tête ICMP par défaut.  
+#### **1️ Création du Paquet ICMP**  
+```python
+pkg = IP(dst=target) / ICMP()
+```
+- Crée un **paquet ICMP de type Echo Request** (comme `ping`).  
+- `IP(dst=target)` définit l’adresse de destination.  
+- `ICMP()` ajoute l’en-tête ICMP (type **Echo Request** par défaut).  
 
-2. **Envoi du Paquet et Attente de Réponse :**  
-   ```python
-   answers, unanswered = sr(pkg, timeout=3, retry=2, verbose=0)
-   ```
-   - Envoie du paquet ICMP avec `sr()` (send/receive).  
-   - Timeout de 3 secondes par tentative.  
-   - **2 tentatives** (`retry=2`) pour les hôtes silencieux.  
+#### **2️ Envoi du Paquet & Attente de Réponse**  
+```python
+answers, _ = sr(pkg, timeout=3, retry=2, verbose=0, iface=self.interface if self.interface else None)
+```
+- Envoie le paquet avec `sr()` (**send and receive**).  
+- **Timeout de 3 secondes** pour la réponse.  
+- **2 tentatives (`retry=2`)** pour maximiser la détection des hôtes silencieux.  
+- Utilisation de **`iface=self.interface`** pour spécifier une interface réseau (optionnelle).  
 
-3. **Traitement des Réponses :**  
-   ```python
-   answers.summary(lambda r: host_found.append(target))
-   ```
-   - Si une réponse ICMP est reçue, l’adresse IP de la cible est ajoutée à `host_found`.  
-
-4. **Stockage des Résultats :**  
-   ```python
-   if host_found:
-       result[index] = host_found[0]
-   ```
-   - Le résultat est stocké dans la liste `results` à l’index correspondant.  
-   - Cela permet de conserver l’ordre des hôtes scannés.  
+#### **3️ Traitement des Réponses**  
+```python
+if answers:
+    results_queue.put(target)
+```
+- Si une **réponse ICMP est reçue**, l’IP du **cible est stockée** dans `results_queue`.  
+- Cela permet de collecter **uniquement les adresses des hôtes actifs** sur le réseau.  
 
 ---
 
-### 💡 **Optimisation via le Multithreading**
+## ⚡ **3.3 Optimisation avec le Multithreading**  
 
-Le scan d’un réseau peut être très lent si chaque IP est scannée séquentiellement. ASTU utilise des **threads** pour :  
-- Envoyer plusieurs requêtes ICMP en parallèle.  
-- Réduire le temps total de scan, surtout sur des plages IP étendues (/24, /16, etc.).  
+Un **scan séquentiel** d’un réseau est **très lent** 🚶. ASTU utilise **les threads** pour :  
+**Envoyer plusieurs requêtes ICMP en parallèle**.  
+**Réduire drastiquement le temps total de scan** (idéal pour `/24`, `/16`, etc.).  
 
-**Avantage :**  
-- **Rapidité** : Un scan de 256 IP peut être fait en quelques secondes.  
-- **Efficacité** : Moins d’attente par IP grâce à la parallélisation.  
+| **Méthode** | **Temps approximatif pour 256 IP** |
+|------------|--------------------------------|
+| **Scan Séquentiel** | **~5 minutes** (selon le réseau) |
+| **Scan Multithreadé** | **~5-10 secondes** |
+
+### **Avantages du Multithreading**  
+**Rapidité** : Scan **256 IP en quelques secondes**.  
+**Moins d’attente** : Chaque thread envoie une requête **sans attendre les autres**.  
 
 ---
 
-## ⚡ **3.3 Exemple de Scan Réseau avec ASTU**
+## 🔎 **3.4 Exemple de Scan Réseau avec ASTU**  
 
 ### **Commande :**  
 ```bash
 astsu -d -i eth0
 ```
-- `-d` : Découverte des hôtes.  
-- `-i eth0` : Spécifie l’interface réseau à utiliser (utile sur des machines multi-cartes réseau).  
+- `-d` : Active la découverte des hôtes.  
+- `-i eth0` : Spécifie l’interface réseau à utiliser.  
 
 ### **Résultat attendu :**  
 ```
-[*] Starting - Discover Hosts Scan
-Scanning... |████████████████████████████████████████| 256/256
-[*] 5 hosts found
-[*] Host found: 192.168.1.1
-[*] Host found: 192.168.1.12
-[*] Host found: 192.168.1.15
-[*] Host found: 192.168.1.34
-[*] Host found: 192.168.1.101
+
+        🔍 Démarrage - Découverte des hôtes sur le réseau [ Interface : eth0 ]
+
+
+[INFO] Scan en cours... ████████████████████████████████ 100%
+
+
+
+        -----3 Hôtes Actifs Trouvés-----
+
+    192.168.1.1   ➜   MonOrdinateur
+    192.168.1.12  ➜   Serveur_Web
+    192.168.1.34  ➜   N/A - Hostname not found
 ```
 
 ---
 
-## 🔎 **3.4 Limites de la Découverte ICMP**
+## ⚠️ **3.5 Limites de la Découverte ICMP**  
 
-Bien que rapide et simple, la méthode ICMP a des limites :  
-- **Pare-feux** : De nombreux pare-feux bloquent les paquets ICMP (anti-ping).  
-- **Équipements réseau configurés pour ignorer ICMP** : Certains serveurs n'y répondent pas.  
-- **Solutions :**  
-  - **Scan ARP** sur les réseaux locaux (très efficace pour contourner le blocage ICMP).  
-  - **TCP Ping Sweep** : Envoyer des paquets SYN sur des ports courants (80, 443) pour détecter des hôtes actifs même si ICMP est bloqué.  
+Bien que rapide et efficace, l’**ICMP Scan** a ses **limites** :  
+
+**Pare-feux** : Beaucoup de pare-feux bloquent les requêtes **ICMP Echo Request** (`ping`).  
+**Équipements réseau configurés pour ignorer ICMP**.  
+**Ne fonctionne pas toujours sur les machines Windows modernes (firewall activé)**.  
+
+### **Solutions Alternatives**  
+🔹 **Scan ARP** : Très efficace pour détecter les hôtes **sur un réseau local**.  
+🔹 **TCP Ping Sweep** : Envoi de **paquets SYN** sur des ports ouverts (`80`, `443`, etc.).  
+🔹 **Scan UDP** : Moins fiable, mais peut identifier certains équipements.  
+
+---
+
+## 🔥 **3.6 Améliorations Futures**  
+**Ajouter une détection automatique des interfaces réseau**.  
+**Supporter d'autres méthodes de scan (ARP, TCP, UDP)**.  
+**Exporter les résultats en JSON/CSV** pour une meilleure analyse.  
 
 ---
 
@@ -540,12 +658,17 @@ On va détailler ces fonctions et expliquer les concepts d’OS fingerprinting.
 ```python
 def os_scan(self):
     target_os = os_detection.scan(self.target)
-    
+    target_os_str = ''
     if target_os:
-        print("")
-        logging.info(f"Target OS: {target_os}")
+        if target_os == 'Linux' or target_os == 'Windows':
+            print(f"\n\tSystème d'exploitation détecté : {target_os}\n")
+            target_os_str = "OS detected : " + str(target_os)
+        else:
+            print(f"\n\t---- : {target_os}\n")
+            target_os_str = "----- : " + str(target_os)
     else:
-        logging.warning("[[red]-[/red]] Error when scanning OS")
+        print("\n\t[[red]-[/red]] [ERROR] Impossible de détecter le système d'exploitation\n")
+    return target_os_str
 ```
 
 ### 🔍 **Analyse de la Logique**
@@ -577,139 +700,195 @@ from scapy.all import *
 def scan(target, interface=None):
     try:
         os_ttl = {
-            'Linux/Unix 2.2-2.4 >': 255,
-            'Linux/Unix 2.0.x kernel': 64,
-            'Windows 98': 32,
-            'Windows': 128
+            'Linux':[64],
+            'Windows':[128, 255],
+            'Unix/BSD':[255]
         }
-        pkg = IP(dst=target, ttl=128) / ICMP()
-
+        
+        icmp_pkt = scapy.IP(dst=target, ttl=128) / scapy.ICMP()
+        
         if interface:
-            ans, uns = sr(pkg, retry=5, timeout=3, inter=1, verbose=0, iface=interface)
+            ans, uns = scapy.sr(icmp_pkt, retry=5, timeout=3, inter=1, verbose=0, iface=interface)
         else:
-            ans, uns = sr(pkg, retry=5, timeout=3, inter=1, verbose=0)
-
+            ans, uns = scapy.sr(icmp_pkt, retry=5, timeout=3, inter=1, verbose=0)
+        
+        if len(ans) == 0:
+            print(" ICMP bloqué. Possible firewall détecté !")
+            return "Firewall détecté"
+        
         try:
             target_ttl = ans[0][1].ttl
         except:
-            print("[-] Host did not respond")
-            return False
+            print("[-] Hôte injoignable via ICMP")
+            return "OS Inconnu"
+        
+        #Analyse du TTL
+        detected_os = "Os Inconnu"
+        for os_name, ttl_values in os_ttl.items():
+            if target_ttl in ttl_values:
+                detected_os = os_name
+                break 
+        
+        #Fingerprinting TCP (envoie d'un paquet SYN sur un prt ouvert)
+        tcp_pkt = scapy.IP(dst=target) / scapy.TCP(dport=80, flags='S')
+        tcp_resp  = scapy.sr1(tcp_pkt, timeout=3, verbose=0)
+        
+        if tcp_resp and tcp_resp.haslayer(scapy.TCP):
+            flags = tcp_resp.getlayer(scapy.TCP).sprintf('%flags%')
+            if flags == 0x12: #SYNC-ACK reçu
+                detected_os += " - (TCP stack analysé)"
+            elif flags == 0x14: #RST-ACK reçu
+                detected_os += " - (TCP stack detecté)"
+        
+        tcp_ack_pkt = scapy.IP(dst=target) / scapy.TCP(dport=80, flags='A')  # "A" = ACK
+        ack_resp = scapy.sr1(tcp_ack_pkt, timeout=3, verbose=0)
 
-        for ttl in os_ttl:
-            if target_ttl == os_ttl[ttl]:
-                return ttl
-    except:
-        return False
+        if ack_resp is None:
+            print("⚠️  Aucun retour au paquet ACK. Un firewall filtre peut-être les connexions.")
+            return detected_os + " - Firewall détecté"
+            
+        return detected_os
+    
+    except Exception as e:
+        print("[-] Erreur lors de la détection de l'OS: ", e)
+        return "OS Inconnu"
 ```
 
 ---
 
-### 🔍 **Analyse de la Logique**
+### 🔍 **Analyse de la Logique**  
 
-1. **Base de Données des TTL par Système d’Exploitation :**  
-   ```python
-   os_ttl = {
-       'Linux/Unix 2.2-2.4 >': 255,
-       'Linux/Unix 2.0.x kernel': 64,
-       'Windows 98': 32,
-       'Windows': 128
-   }
-   ```
-   - Chaque système d’exploitation utilise un **TTL (Time To Live)** par défaut pour les paquets IP.  
-   - ASTU utilise cette différence pour tenter d’identifier l'OS de la cible.  
+#### **1️ Base de Données des TTL par Système d’Exploitation**  
+```python
+os_ttl = {
+    'Linux': [64],
+    'Windows': [128, 255],
+    'Unix/BSD': [255]
+}
+```
+- Chaque **OS utilise un TTL par défaut** pour les paquets IP envoyés.  
+- ASTU exploite cette caractéristique pour **identifier la cible**.  
 
-   **Exemples courants de TTL par défaut :**  
-   - **Windows :** 128  
-   - **Linux/Unix :** 64  
-   - **Cisco/Routeurs :** 255  
-
----
-
-2. **Création et Envoi du Paquet ICMP :**  
-   ```python
-   pkg = IP(dst=target, ttl=128) / ICMP()
-   ans, uns = sr(pkg, retry=5, timeout=3, inter=1, verbose=0)
-   ```
-   - ASTU crée un paquet ICMP (comme la commande `ping`).  
-   - Le TTL est fixé à 128, mais cela n'a pas d’impact sur la détection car ASTU lit le TTL de la **réponse**.  
-   - `sr()` envoie le paquet et attend une réponse.  
+#### **Exemples courants de TTL :**  
+| **Système**      | **TTL par défaut** |
+|------------------|------------------|
+| **Windows**      | 128, 255         |
+| **Linux**        | 64               |
+| **Unix/BSD**     | 255              |
+| **Cisco/Routeurs** | 255            |
 
 ---
 
-3. **Extraction du TTL de la Réponse :**  
-   ```python
-   target_ttl = ans[0][1].ttl
-   ```
-   - ASTU récupère le TTL de la réponse ICMP retournée par la cible.  
-
-   **Important :**  
-   - Le TTL est **diminué à chaque saut de routeur**.  
-   - Si le TTL initial est 128 (Windows), et qu’il passe par 3 routeurs, la réponse aura un TTL de 125.  
-
----
-
-4. **Identification de l'OS en Fonction du TTL :**  
-   ```python
-   for ttl in os_ttl:
-       if target_ttl == os_ttl[ttl]:
-           return ttl
-   ```
-   - ASTU compare le TTL reçu avec sa base de données `os_ttl`.  
-   - Si une correspondance est trouvée, l’OS est identifié.  
+#### **2️ Création et Envoi du Paquet ICMP**  
+```python
+icmp_pkt = scapy.IP(dst=target, ttl=128) / scapy.ICMP()
+ans, uns = scapy.sr(icmp_pkt, retry=5, timeout=3, inter=1, verbose=0)
+```
+- **Construction du paquet ICMP** (`ping`).  
+- `sr()` **envoie le paquet et attend une réponse**.  
+- **5 tentatives** (`retry=5`) pour maximiser la détection.  
+- Timeout de **3 secondes** par tentative.  
 
 ---
 
-### 🧪 **Exemple de Résultat**
+#### **3️ Extraction du TTL de la Réponse**  
+```python
+target_ttl = ans[0][1].ttl
+```
+- **Récupère le TTL de la réponse ICMP** retournée par la cible.  
+- Si aucune réponse n’est reçue :  
+  ```python
+  print(" ICMP bloqué. Possible firewall détecté !")
+  return "Firewall détecté"
+  ```
+  **Possibilité** : L’hôte bloque les `ping`, un pare-feu est actif.  
 
+---
+
+#### **4️ Identification de l'OS en Fonction du TTL**  
+```python
+for os_name, ttl_values in os_ttl.items():
+    if target_ttl in ttl_values:
+        detected_os = os_name
+        break
+```
+- **Compare le TTL reçu** avec la base de données `os_ttl`.  
+- **Si une correspondance est trouvée, l’OS est détecté**.  
+
+---
+
+#### **5️ Fingerprinting TCP : Détection via SYN-ACK**  
+```python
+tcp_pkt = scapy.IP(dst=target) / scapy.TCP(dport=80, flags='S')
+tcp_resp  = scapy.sr1(tcp_pkt, timeout=3, verbose=0)
+```
+- **Envoie un paquet TCP SYN** sur le port 80.  
+- **Attente de réponse** :  
+  - `SYN-ACK` reçu → L’OS accepte la connexion.  
+  - `RST-ACK` reçu → L’OS refuse mais indique son comportement.  
+- Permet **d'affiner la détection OS**.  
+
+---
+
+#### **6️ Vérification de Filtrage Firewall via ACK**  
+```python
+tcp_ack_pkt = scapy.IP(dst=target) / scapy.TCP(dport=80, flags='A')
+ack_resp = scapy.sr1(tcp_ack_pkt, timeout=3, verbose=0)
+```
+- **Envoi d’un paquet ACK** sur le port 80.  
+- **Objectif :** Vérifier si un **firewall bloque les connexions TCP**.  
+- Si **aucune réponse**, un **pare-feu bloque peut-être le trafic** :  
+  ```python
+  print("⚠️  Aucun retour au paquet ACK. Un firewall filtre peut-être les connexions.")
+  return detected_os + " - Firewall détecté"
+  ```
+
+---
+
+## 🧪 **4.3 Exemple de Résultat**  
+
+### **Commande :**  
 ```bash
 astsu -sO 192.168.1.1
 ```
-**Sortie attendue :**  
+### **Sortie attendue :**  
 ```
-[*] Target OS: Windows
+Détection de l'OS de la cible 192.168.1.1
+
+
+        Système d'exploitation détecté : Windows
 ```
-Ou si la cible est un serveur Linux :  
+Ou si la cible est un **serveur Linux** :  
 ```
-[*] Target OS: Linux/Unix 2.0.x kernel
+Détection de l'OS de la cible 192.168.1.1
+
+
+        Système d'exploitation détecté : Linux
+        
 ```
 
 ---
 
-## 🎯 **4.3 Limites de la Détection Basée sur le TTL**
+## 🎯 **4.4 Limites de la Détection Basée sur le TTL et TCP**  
 
-La détection basée sur le TTL est **simple**, mais elle a des limites :  
+La détection basée sur le TTL et le fingerprinting TCP est **puissante**, mais elle a des **limites** :  
 
 ### ❌ **Limitations :**  
-1. **Réseaux Complexes :**  
-   - Le TTL diminue à chaque saut de routeur.  
-   - Sur des réseaux multi-sauts, le TTL final peut être trompeur.  
+1. **Influence du Réseau**  
+   - Chaque routeur diminue le TTL → Peut fausser l’analyse.  
+   - Dans un réseau avec plusieurs sauts, le TTL final peut être **trompeur**.  
 
-2. **Systèmes Configurés Manuellement :**  
-   - Certains administrateurs modifient le TTL par défaut pour des raisons de sécurité.  
-   - Cela fausse la détection.  
+2. **Configurations Manuelles**  
+   - Certains **administrateurs modifient le TTL par défaut** (ex. : masquer l’OS).  
 
-3. **Pare-feux et IDS :**  
-   - Certains dispositifs de sécurité modifient le TTL des paquets ICMP.  
-   - D'autres bloquent carrément les réponses ICMP.  
+3. **Pare-feux et IDS**  
+   - Certains pare-feux **bloquent ou modifient** les réponses ICMP et TCP.  
+   - **Exemple :** Un pare-feu peut répondre avec un **TTL personnalisé**.  
 
----
-
-## 🚀 **4.4 Amélioration de la Détection d’OS (Approche Avancée)**
-
-Pour améliorer la détection d’OS, ASTU pourrait :  
-
-1. **Combiner plusieurs techniques :**  
-   - **Analyse des bannières de services** (via des scans TCP sur des ports comme 22, 80, 443).  
-   - **TCP Fingerprinting** : Analyse des réponses TCP SYN/ACK (comme le fait Nmap).  
-   - **Analyse des paramètres TCP/IP** : Options TCP, fenêtre de taille, etc.  
-
-2. **Utiliser des Paquets Spécifiques :**  
-   - Envoi de paquets TCP malformés pour observer des comportements spécifiques aux OS.  
-   - Analyse des champs comme DF (Don’t Fragment), TOS (Type of Service), etc.  
-
-3. **Ajout d’une Base de Données Plus Complète :**  
-   - Intégration de signatures d’OS plus détaillées.  
-   - Utilisation de `service_probes` pour enrichir la détection.  
+### ✅ **Améliorations Possibles**  
+🔹 **Ajouter une analyse des réponses TCP sur plusieurs ports**.  
+🔹 **Utiliser un scan ARP pour contourner les pare-feux locaux**.  
+🔹 **Détecter les VPN et proxies via le comportement réseau**.
 
 ---
 
@@ -730,104 +909,78 @@ Dans ASTU, cette fonctionnalité repose sur :
 
 ### 📄 **Code :**  
 ```python
-from nmap_vscan import vscan
-import sys, platform
+from scapy.all import *
+import socket
 
 def scan_service(target, port):
-    return True  # Ce retour arrête la fonction prématurément (à corriger !)
-
-    if platform.system() == 'Linux':
-        nmap = vscan.ServiceScan('/usr/share/astsu/service_probes')
-    elif platform.system() == 'Windows':
-        nmap = vscan.ServiceScan('C:\\Projetos\\Tools\\Network Tool\\service_probes')
-
     try:
-        result = nmap.scan(str(target), int(port), 'tcp')
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        result = sock.connect_ex((target, port))
+
+        if result == 0:  # Le port est ouvert
+            sock.sendall(b"HELLO\r\n")  # Envoie une requête simple
+            response = sock.recv(1024).decode(errors="ignore").strip()  # Récupère la réponse
+            sock.close()
+            if response:
+                return f"[BANNIÈRE] {response}"  # Retourne la bannière du service détecté
+
     except Exception as e:
-        return e
-
-    service_name = str(result['match']['versioninfo']['cpename'])
-    service_name = service_name.replace('[', '').replace(']', '').replace("'", "", 2)
-
-    if not service_name:
-        service_name = 'Not found any service'
-
-    return service_name
+        return f"[ERREUR] {e}"  # Capture les erreurs réseau
+        
+    return "[FERMÉ] Aucun service détecté"
 ```
 
 ---
 
-### 🚩 **Problème immédiat à corriger :**  
+## 🔍 **5.2 Explication de la Logique**  
+
+### **1️ Connexion au Port Cible**  
 ```python
-return True
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(2)
+result = sock.connect_ex((target, port))
 ```
-Cette ligne annule toute la logique de la fonction. Il faudra la supprimer pour que la détection de services fonctionne correctement.  
+- **Crée un socket TCP** pour tester la connexion sur le port spécifié.  
+- **Définit un timeout de 2 secondes** pour éviter les blocages en cas de port filtré.  
+- **Utilise `connect_ex()`** :
+  - Retourne `0` si le port est **ouvert**.  
+  - Retourne un **code d’erreur** si le port est **fermé ou filtré**.  
 
 ---
 
-### 🔍 **Analyse de la Logique**
-
-1. **Détection de l’OS Hôte :**  
-   ```python
-   if platform.system() == 'Linux':
-       nmap = vscan.ServiceScan('/usr/share/astsu/service_probes')
-   elif platform.system() == 'Windows':
-       nmap = vscan.ServiceScan('C:\\Projetos\\Tools\\Network Tool\\service_probes')
-   ```
-   - ASTU détecte si l’outil tourne sur **Linux** ou **Windows**.  
-   - Il charge le fichier `service_probes`, qui contient des signatures pour identifier les services réseau (similaire à `nmap-service-probes` de Nmap).  
-
-2. **Scan du Port Cible :**  
-   ```python
-   result = nmap.scan(str(target), int(port), 'tcp')
-   ```
-   - Appel à la méthode `scan()` de `nmap_vscan.ServiceScan`.  
-   - Cette méthode envoie des requêtes personnalisées (probes) sur le port spécifié pour identifier le service actif.  
-
-3. **Extraction des Informations du Service :**  
-   ```python
-   service_name = str(result['match']['versioninfo']['cpename'])
-   service_name = service_name.replace('[', '').replace(']', '').replace("'", "", 2)
-   ```
-   - ASTU extrait le nom du service et sa version à partir des résultats retournés par `nmap_vscan`.  
-   - Nettoyage des caractères inutiles pour un affichage propre.  
-
-4. **Retour du Résultat :**  
-   ```python
-   if not service_name:
-       service_name = 'Not found any service'
-   return service_name
-   ```
-   - Si aucun service n'est détecté, un message par défaut est affiché.  
-
----
-
-## ⚙️ **5.2 Qu’est-ce que `nmap_vscan` ?**
-
-Bien qu’on n’ait pas accès au code source de `nmap_vscan`, il est probable que ce module :  
-- **Imite le comportement de Nmap** pour le service fingerprinting.  
-- Utilise des **probes réseau** stockés dans le fichier `service_probes` pour interroger les services sur les ports ouverts.  
-- Analyse les **bannières de réponse** des services pour identifier leur type et leur version.  
-
----
-
-## 📜 **5.3 Rôle du Fichier `service_probes`**
-
-Le fichier `service_probes` fonctionne probablement de la même manière que le fichier `nmap-service-probes` utilisé par Nmap. Il contient des modèles de requêtes (probes) et des signatures pour :  
-- **Envoyer des requêtes spécifiques à des services courants** (HTTP, FTP, SMTP, etc.)  
-- **Analyser les réponses** pour en déduire le service et sa version  
-
-### 📊 **Exemple d’un Probe Typique :**  
-```plaintext
-Probe TCP GetRequest q|GET / HTTP/1.0\r\n\r\n|
-match http m|^HTTP/1\.[01] \d{3} .*\r\nServer: ([^\r\n]+)|
+### **2️ Envoi d'une Requête et Récupération de la Réponse**  
+```python
+sock.sendall(b"HELLO\r\n")  # Envoie une requête simple
+response = sock.recv(1024).decode(errors="ignore").strip()  # Récupère la réponse
 ```
-- **Probe** : Envoie une requête HTTP GET sur un port ouvert.  
-- **Match** : Analyse la réponse pour identifier le serveur (Apache, Nginx, etc.).  
+- **Envoie un message générique (`HELLO\r\n`)** pour tenter de provoquer une réponse du service.  
+- **Lit la réponse (bannière du service)** :  
+  - Certains services (FTP, SSH, HTTP...) **répondent automatiquement** avec leur **nom et version**.  
 
 ---
 
-## 🧪 **5.4 Exemple de Détection de Service avec ASTU**
+### **3️ Fermeture de la Connexion**  
+```python
+sock.close()
+```
+- **Libère la ressource socket** pour éviter une saturation des connexions réseau.  
+
+---
+
+### **4️ Gestion des Erreurs**  
+```python
+except Exception as e:
+    return f"[ERREUR] {e}"
+```
+- Capture **toutes les erreurs possibles** :  
+  - Timeout (`socket.timeout`).  
+  - Connexion refusée (`ConnectionRefusedError`).  
+  - Hôte injoignable (`socket.gaierror`).  
+
+---
+
+## 🧪 **5.3 Tests et Exemples de Résultats**  
 
 ### **Commande :**  
 ```bash
@@ -838,462 +991,259 @@ astsu -sC -sV 192.168.1.1
 
 ### **Sortie attendue :**  
 ```
-[*] Port: 80 - Open
-[*] Service detected: Apache 2.4.41
-[*] Port: 22 - Open
-[*] Service detected: OpenSSH 7.9
+
+        Scan des ports courants sur 192.168.1.1
+
+
+        Démarrage - Analyse des port --> TCP <--
+
+
+[CLOSED]      ------> Port 21
+[CLOSED]      ------> Port 22
+[CLOSED]      ------> Port 80
+[CLOSED]      ------> Port 443
+[OPEN]        ------> Port 3306
+[CLOSED]      ------> Port 14147
+[CLOSED]      ------> Port 2121
+[CLOSED]      ------> Port 8080
+[CLOSED]      ------> Port 8000
+
+
+         ✅ Scan terminé :9 ports analysés dont :
+
+                1 - Open
+                8 - Closed
+                0 - Filtered
+                0 - Open/Filtered
+
+
+
+        Détection des services actifs sur 192.168.1.1
+
+Port 21   : -
+Port 22   : -
+Port 80   : -
+Port 433  : -
+Port 3306 : [BANNIÈRE] FjHost 'Hostname' is not allowed to connect to this MySQL server
+Port 8080 : -
+
 ```
 
 ---
 
-## 🚀 **5.5 Comment Améliorer la Détection de Services ?**
+## 🎯 **5.4 Améliorations Futures**  
 
-### 🔍 **Idées d’amélioration :**  
-1. **Suppression de la ligne `return True`** pour activer la fonctionnalité.  
-2. **Optimisation des probes dans `service_probes`** pour couvrir plus de services.  
-3. **Ajout de nouvelles techniques de fingerprinting :**  
-   - **Analyse des bannières TCP** sans envoyer de requêtes spécifiques (passif).  
-   - **Fingerprinting SSL/TLS** pour les services sécurisés (HTTPS, SMTPS).  
-   - **Détection des services masqués** via des techniques d’évasion (ex : services sur des ports non standards).  
-
-4. **Optimisation des performances :**  
-   - Implémentation de **threads** pour scanner plusieurs services en parallèle.  
-   - Gestion des **timeouts adaptatifs** selon les services scannés.  
+**Optimiser la détection des bannières** : Essayer différentes **requêtes spécifiques** (`GET / HTTP/1.1`, `USER anonymous` pour FTP, etc.).  
+**Ajouter la reconnaissance avancée** des services en **comparant les bannières** à une base de signatures (comme `nmap` avec `nmap-service-probes`).  
+**Supporter le scan UDP** (`SOCK_DGRAM`), utile pour les services comme **DNS (53)** ou **SNMP (161)**.  
+**Améliorer la gestion des erreurs** pour différencier les ports **fermés** des ports **filtrés** par un pare-feu.  
 
 ---
 
-# 🚀 **Phase 6 : Gestion des Arguments et Interface en Ligne de Commande (CLI)**
+# 🚀 **Phase 6 : Gestion des Arguments et Interface en Ligne de Commande (CLI)**  
 
-La gestion des arguments en ligne de commande est essentielle pour les outils de sécurité comme ASTU. Cela permet de :  
-- **Contrôler facilement les fonctionnalités** (scan de ports, détection d'OS, découverte d’hôtes, etc.)  
-- **Personnaliser les scans** selon les besoins (choix du protocole, du timeout, etc.)  
-- **Automatiser des tâches** via des scripts ou des pipelines CI/CD  
+La gestion des arguments en ligne de commande est essentielle pour un outil de cybersécurité comme **ASTU**. Cela permet de :  
 
-Dans ASTU, cette gestion est assurée par la fonction **`arguments()`** grâce à la bibliothèque Python `argparse`. C’est ce qui permet de lancer des commandes comme :  
+**Contrôler facilement les fonctionnalités** : scan de ports, détection d'OS, découverte d’hôtes, etc.  
+**Personnaliser les scans** : choix du protocole, du timeout, mode Stealth, etc.  
+**Automatiser des tâches** : exécuter ASTU dans des scripts ou des pipelines CI/CD.  
+
+Grâce à cette interface CLI, on peut exécuter ASTU avec une simple commande comme :  
 ```bash
 astsu -sC -sV 192.168.1.1
 ```
-
-On va donc :  
-1. **Analyser la fonction `arguments()`**  
-2. **Comprendre comment les arguments sont utilisés dans ASTU**  
-3. **Examiner la logique du `main`** pour voir comment les arguments déclenchent les différentes fonctionnalités  
+🔹 **`-sC`** → Scan des ports courants.  
+🔹 **`-sV`** → Détection des services actifs.  
 
 ---
 
-## ⚙️ **6.1 Fonction `arguments()` (dans `astsu.py`)**
+## ⚙️ **6.1 Fonction `arguments()` (dans `astsu.py`)**  
 
 ### 📄 **Code :**  
 ```python
+
 def arguments():
     parser = argparse.ArgumentParser(
-        description="ASTSU - Network Tool",
-        usage="\n\tastsu.py -sC 192.168.0.106\n\tastsu.py -sA 192.168.0.106"
+        description="ASTU - Advanced Security Testing and Scanning Utility",
+        usage="\n\t astsu.py [options] [target]",
     )
     
-    parser.add_argument('-sC', "--scan-common", help="Scan common ports", action="count")
-    parser.add_argument('-sA', "--scan-all", help="Scan all ports", action="count")
-    parser.add_argument('-sO', "--scan-os", help="Scan OS", action="count")
-    parser.add_argument('-sP', "--scan-port", help="Scan defined port")
-    parser.add_argument('-sV', "--scan-service", help="Try to detect service running")
-    parser.add_argument('-d', "--discover", help="Discover hosts in the network", action="count")
-    parser.add_argument('-p', "--protocol", help="Protocol to use in the scans. ICMP, UDP, TCP.", type=str, choices=['ICMP', 'UDP', 'TCP'], default=None)
-    parser.add_argument('-i', "--interface", help="Interface to use", default=None)
-    parser.add_argument('-t', "--timeout", help="Timeout to each request", default=5, type=int)
-    parser.add_argument('-st', "--stealth", help="Use Stealth scan method (TCP)", action="count")
-    parser.add_argument('-v', "--verbose", action="count")
-    parser.add_argument('Target', nargs='?', default=None)
-
+    # Options de scan
+    parser.add_argument('-sC', '--scan-common', help="Scan des ports courants", action="count")        
+    parser.add_argument('-sA', '--scan-all', help="Scan de tous les ports (0-65535)", action="count")
+    parser.add_argument('-sP', '--scan-port', help="Scan d'un port spécifique", type=int)
+    parser.add_argument('-d', '--discover', help="Découverte des hôtes sur le réseau", action="count") 
+    parser.add_argument('-sO', '--scan-os', help="Détection de l'OS", action="store_true")
+    parser.add_argument('-sV', '--scan-service', help="Détection des services actifs", action="store_true")
+    
+    # Paramètres de configuration
+    parser.add_argument('-i', '--interface', help="Interface réseau à utiliser")
+    parser.add_argument('-t', '--timeout', help="Timeout pour les requêtes", type=int, default=5)
+    parser.add_argument('-p', '--protocol', help="Protocole à utiliser (TCP, UDP, ICMP)", choices=['TCP', 'UDP', 'ICMP'])
+    parser.add_argument('-o', '--output', help="Fichier de sortie pour enregistrer les résultats")
+    parser.add_argument('-v', '--version', help="Affiche la version", action="store_true")
+    parser.add_argument('-st', '--stealth', help='Utiliser le scan stealth (TCP SYN)', action='store_true')
+    
+    # Cible du scan
+    parser.add_argument('Target', nargs='?', help='Adresse IP ou domaine de la cible')
+    
     args = parser.parse_args()
-
-    if not args.discover and not args.Target:
-        sys.exit(parser.print_help())
-
-    if not args.scan_common and not args.scan_all and not args.scan_os and not args.scan_port and not args.discover:
-        sys.exit(parser.print_help())
-
-    return (args, parser)
+    
+    # Vérification des arguments : afficher l’aide si aucun argument n’est fourni
+    if not (args.scan_common or args.scan_all or args.discover or args.scan_os or args.scan_service or args.version or args.scan_port):
+        parser.print_help()
+        sys.exit(1)
+    
+    # Vérification de la cible si nécessaire
+    if (args.scan_common or args.scan_all or args.scan_os or args.scan_service) and not args.Target:
+        logging.error("Erreur : vous devez spécifier une cible (ex: 192.168.1.1)")
+        sys.exit(1)
+    
+    return args
 ```
 
 ---
 
-### 🔍 **6.2 Analyse des Options d’Arguments**
+## 🔍 **6.2 Analyse des Options d’Arguments**  
 
-1. **Scans de Ports :**  
-   - `-sC` / `--scan-common` → Scan des ports courants (21, 22, 80, 443, etc.)  
-   - `-sA` / `--scan-all` → Scan de **tous les ports (0-65535)**  
-   - `-sP` / `--scan-port` → Scan de ports spécifiques (ex : `-sP 80,443`)  
+### **1️ Scans de Ports :**  
+- `-sC` / `--scan-common` → Scan des ports courants (21, 22, 80, 443, etc.).  
+- `-sA` / `--scan-all` → Scan de **tous les ports (0-65535)**.  
+- `-sP` / `--scan-port` → Scan d’un **port spécifique** (ex: `-sP 80`).  
 
-2. **Fonctionnalités Avancées :**  
-   - `-sO` / `--scan-os` → Détection du système d’exploitation  
-   - `-sV` / `--scan-service` → Détection des services actifs sur les ports ouverts  
-   - `-d` / `--discover` → Découverte des hôtes actifs sur le réseau  
+### **2️ Fonctionnalités Avancées :**  
+- `-sO` / `--scan-os` → Détection du **système d’exploitation** de la cible.  
+- `-sV` / `--scan-service` → Identification des **services actifs** sur les ports ouverts.  
+- `-d` / `--discover` → **Découverte des hôtes** actifs sur le réseau.  
 
-3. **Personnalisation des Scans :**  
-   - `-p` / `--protocol` → Choix du protocole (ICMP, UDP, TCP)  
-   - `-i` / `--interface` → Spécifier l’interface réseau à utiliser (utile sur des machines multi-cartes réseau)  
-   - `-t` / `--timeout` → Timeout pour chaque requête (par défaut 5 secondes)  
-   - `-st` / `--stealth` → Utiliser le mode **Stealth Scan** (TCP SYN scan)  
-   - `-v` / `--verbose` → Affichage des logs détaillés pour le debug  
+### **3️ Personnalisation des Scans :**  
+- `-p` / `--protocol` → Choix du **protocole** (TCP, UDP, ICMP).  
+- `-i` / `--interface` → **Spécifier l’interface réseau** à utiliser.  
+- `-t` / `--timeout` → Timeout des requêtes (par défaut **5 secondes**).  
+- `-st` / `--stealth` → Active le **mode Stealth Scan (TCP SYN)**.  
 
-4. **Cible du Scan :**  
-   - `Target` → L’adresse IP ou le domaine de la cible à scanner (par exemple `192.168.1.1`)  
-
----
-
-### 🚩 **6.3 Conditions de Validation des Arguments**
-
-Avant de lancer le scan, ASTU vérifie que les arguments sont valides :  
-```python
-if not args.discover and not args.Target:
-    sys.exit(parser.print_help())
-
-if not args.scan_common and not args.scan_all and not args.scan_os and not args.scan_port and not args.discover:
-    sys.exit(parser.print_help())
-```
-- **Si aucune cible (`Target`) n’est spécifiée** et que la découverte réseau (`-d`) n’est pas activée → le programme affiche l’aide.  
-- **Si aucun type de scan n’est demandé** → ASTU affiche également l’aide.  
+### **4️ Autres Options :**  
+- `-o` / `--output` → Enregistre les résultats dans un fichier.  
+- `-v` / `--version` → Affiche la version d’ASTU.  
+- `Target` → L’**adresse IP ou le domaine** de la cible.  
 
 ---
 
-## 🚀 **6.4 Intégration des Arguments dans la Logique Principale (Bloc `if __name__ == '__main__':`)**
+## 🚀 **6.3 Intégration des Arguments dans le `main`**  
 
 ### 📄 **Code :**  
 ```python
 if __name__ == '__main__':
-    args, parser = arguments() 
-
-    del logging.root.handlers[:]
-    logging.basicConfig(format="%(levelname)s%(message)s", level=logging.DEBUG if args.verbose else logging.INFO)
-
-    print_figlet()
-
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("8.8.8.8", 80))
-    ip = s.getsockname()[0]
-    s.close()
-
-    scanner = Scanner(target=args.Target, my_ip=ip, protocol=args.protocol, timeout=args.timeout, interface=args.interface)
+    args, parser = arguments()
+    
+    print_banner()
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8",80))
+        ip = s.getsockname()[0]
+        # print(ip)
+        s.close()
+    except OSError:
+        ip = "0.0.0.0"
+        print("\n\t⚠️  Connexion Internet absente. L'adresse IP locale ne peut pas être détectée.")
+        print("\t⚠️  Assurez-vous d'être connecté au réseau avant de lancer un scan.")
+    
+        
+    scanner = Scanner(
+        target=args.Target,
+        my_ip=ip,
+        protocol=args.protocol if args.protocol else "TCP",
+        timeout=args.timeout, 
+        interface=args.interface
+    )
+    
+    if args.version:
+        print("\n")
+        print(f"\t ASTU Version: {__version__}")
+        print("\n")
+        sys.exit(0) 
+    
+    if args.output:
+        output_file = args.output
+        with open(output_file, "w") as f:
+            f.write("\t\t===== ASTU Scan Report =====\n\n")
 
     if args.scan_common:
-        scanner.common_scan(stealth=args.stealth, sv=args.scan_service)
-
-    elif args.scan_all:
-        scanner.range_scan(start=0, end=65535, stealth=args.stealth, sv=args.scan_service)
-
-    elif args.scan_port:
-        try:
-            scanner.range_scan(start=int(args.scan_port.split(',')[0]), end=int(args.scan_port.split(',')[1]), stealth=args.stealth, sv=args.scan_service)
-        except:
-            scanner.range_scan(start=args.scan_port, stealth=args.stealth, sv=args.scan_service)
-
-    elif args.discover:
-        scanner.discover_net() 
+        print(f"\n\tScan des ports courants sur {args.Target}")
+        results = scanner.common_scan(stealth=args.stealth)
+        if args.output:
+            with open(output_file, "a") as f:
+                f.write("\tCommon_scan results\n\n")
+                f.write("\n".join(results) + "\n")
+                
+    if args.scan_all:
+        print(f"\n\tScan de tous les ports sur {args.Target}")
+        results = scanner.range_scan(start=0, end=65535, stealth=args.stealth)
+        if args.output:
+            with open(output_file, "a") as f:
+                f.write("\tScan_All results\n\n")
+                f.write("\n".join(results) + "\n")
+                            
+    if args.discover:
+        results = scanner.discover_net()
+        if args.output:
+            with open(output_file, "a") as f:
+                f.write("\n\t--Network Scan Result--\n\n")
+                for line in results:
+                    f.write(f"{line} \n")
+                f.write("\n")
 
     if args.scan_os:
-        scanner.os_scan()
+        print(f"\n\nDétection de l'OS de la cible {args.Target}\n")
+        results = scanner.os_scan()
+        if args.output:
+            with open(output_file, "a") as f:
+                f.write("\tOS detection Results results\n\n")
+                f.write(results)
+
+    if args.scan_service:
+        print(f"\n\n\tDétection des services actifs sur {args.Target}\n")
+        results = scanner.service_scan(args.Target)
+        print("\n")
+        if args.output:
+            with open(output_file, "a") as f:
+                f.write("\n".join(results) + "\n")
+
+    if args.scan_port:
 ```
 
 ---
 
-### 🔍 **6.5 Analyse de la Logique**
+## 📊 **6.4 Exemples d’Utilisation**  
 
-1. **Initialisation des Logs :**  
-   ```python
-   logging.basicConfig(format="%(levelname)s%(message)s", level=logging.DEBUG if args.verbose else logging.INFO)
-   ```
-   - Si l’option `-v` est activée, ASTU affiche des logs détaillés (niveau DEBUG).  
-   - Sinon, il utilise le niveau INFO par défaut.  
-
-2. **Détection de l’IP Locale :**  
-   ```python
-   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-   s.connect(("8.8.8.8", 80))
-   ip = s.getsockname()[0]
-   s.close()
-   ```
-   - ASTU détermine l’adresse IP locale de la machine (utile pour la découverte réseau).  
-
-3. **Création de l'Instance du Scanner :**  
-   ```python
-   scanner = Scanner(target=args.Target, my_ip=ip, protocol=args.protocol, timeout=args.timeout, interface=args.interface)
-   ```
-
-4. **Déclenchement des Fonctions en Fonction des Arguments :**  
-   - **Scan des ports courants :** `scanner.common_scan()`  
-   - **Scan de tous les ports :** `scanner.range_scan(0, 65535)`  
-   - **Scan de ports spécifiques :** `scanner.range_scan(start, end)`  
-   - **Découverte d’hôtes :** `scanner.discover_net()`  
-   - **Détection de l’OS :** `scanner.os_scan()`  
-
----
-
-### 📊 **6.6 Exemples de Commandes ASTU**
-
-1. **Scan des Ports Courants sur une Cible :**  
-   ```bash
-   astsu -sC 192.168.1.1
-   ```
-   - Scanne les ports courants (21, 22, 80, 443, etc.).  
-
-2. **Scan de Tous les Ports avec le Mode Stealth (TCP SYN) :**  
-   ```bash
-   astsu -sA -st 192.168.1.1
-   ```
-
-3. **Scan d’une Plage de Ports Définie (ex : 20 à 100) :**  
-   ```bash
-   astsu -sP 20,100 192.168.1.1
-   ```
-
-4. **Découverte des Hôtes Actifs sur le Réseau :**  
-   ```bash
-   astsu -d
-   ```
-
-5. **Détection de l’OS de la Cible :**  
-   ```bash
-   astsu -sO 192.168.1.1
-   ```
-
-6. **Scan avec Logs Verboses pour le Débogage :**  
-   ```bash
-   astsu -sC -v 192.168.1.1
-   ```
-
----
-
-# 🚀 **Phase 7 : Optimisation, Personnalisation et Améliorations**
-
-Maintenant que nous avons une compréhension complète de la structure d’ASTU et de ses fonctionnalités principales, nous allons aborder la **phase d’optimisation et de personnalisation**. L’objectif est d’améliorer la performance, la fiabilité, et de préparer l’ajout de nouvelles fonctionnalités, notamment la **détection d'OS améliorée** que tu souhaites implémenter.  
-
----
-
-## 🎯 **7.1 Objectifs de l’Optimisation**
-
-Voici les axes d’amélioration que nous allons explorer :  
-
-1. **Performance :**  
-   - Accélérer les scans de ports (surtout pour les plages étendues).  
-   - Optimiser la découverte des hôtes pour réduire le temps de scan.  
-
-2. **Fiabilité :**  
-   - Améliorer la détection d’OS pour réduire les faux positifs.  
-   - Corriger les bugs existants (par exemple le `return True` dans `scan_service`).  
-
-3. **Ergonomie :**  
-   - Améliorer la gestion des erreurs pour des messages plus clairs.  
-   - Ajouter de nouvelles options pour un contrôle plus fin des scans.  
-
-4. **Sécurité :**  
-   - Implémenter des protections contre des erreurs critiques (ex : scans sur des IP non autorisées par erreur).  
-
----
-
-## ⚡ **7.2 Optimisation des Scans de Ports**
-
-### 🚩 **Problème actuel :**  
-- Le scan des ports est **séquentiel**, ce qui peut être très lent sur des plages de ports larges (ex : `-sA` pour 0-65535).  
-- La gestion des timeouts ralentit encore plus le processus.  
-
-### 🚀 **Solution : Multithreading pour les Scans de Ports**
-
-L’idée est d’exécuter plusieurs scans de ports en parallèle grâce à des **threads**. Cela permettra de :  
-- Réduire considérablement le temps de scan.  
-- Exploiter pleinement les ressources du CPU.  
-
-### 🧩 **Exemple de Modification (Multithreading dans `range_scan`)**
-
-#### 🔄 **Code Optimisé :**  
-```python
-from threading import Thread
-
-def range_scan(self, start, end=None, stealth=None, sv=None):
-    open_ports = []
-    filtered_ports = []
-    open_or_filtered = []
-    threads = []
-
-    ports = range(start, end) if end else [start]
-
-    def thread_scan(port):
-        scan = self.port_scan(stealth, port=port)
-        if scan:
-            ports_saved = {"open": open_ports, "filtered": filtered_ports, "open/filtered": open_or_filtered}
-            self.handle_port_response(ports_saved, scan, port)
-
-    # Création des threads pour chaque port
-    for port in ports:
-        t = Thread(target=thread_scan, args=(port,))
-        t.start()
-        threads.append(t)
-
-    # Attente de la fin de tous les threads
-    for t in threads:
-        t.join()
-
-    total = len(open_ports) + len(filtered_ports) + len(open_or_filtered)
-    logging.info(f"Found {total} ports!")
-
-    for port in open_ports:
-        logging.info(f"Port: {port} - Open")
-    for port in filtered_ports:
-        logging.warning(f"Port: {port} - Filtered")
-    for port in open_or_filtered:
-        logging.info(f"Port: {port} - Open/Filtered")
+### **1️ Scan des Ports Courants sur une Cible**
+```bash
+astsu -sC 192.168.1.1
 ```
+➡ Scanne les **ports les plus utilisés** (HTTP, SSH, FTP, etc.).  
 
-### ✅ **Résultats attendus :**  
-- Un **gain de temps considérable** pour les scans de plages de ports étendues.  
-- Une utilisation plus efficace des ressources système.  
-
----
-
-## 🌐 **7.3 Optimisation de la Découverte d’Hôtes (ICMP Ping Sweep)**
-
-La fonction `discover_net()` utilise déjà des threads, mais on peut aller plus loin :  
-- **Limiter le nombre de threads simultanés** pour éviter de saturer le réseau.  
-- Implémenter une **file d’attente (Queue)** pour gérer les threads plus efficacement.  
-
-### 🧩 **Amélioration : Gestion des Threads avec une File d’Attente**
-
-```python
-from queue import Queue
-
-def discover_net(self, ip_range=24):
-    base_ip = f"{self.my_ip.rsplit('.', 1)[0]}.0/{ip_range}"
-    hosts = list(ipaddress.ip_network(base_ip).hosts())
-
-    q = Queue()
-    results = []
-
-    def worker():
-        while not q.empty():
-            target = q.get()
-            if self.send_icmp(target):
-                results.append(target)
-            q.task_done()
-
-    # Remplir la file d'attente avec les IP à scanner
-    for host in hosts:
-        q.put(str(host))
-
-    # Lancer un nombre limité de threads (par exemple 50)
-    for _ in range(50):
-        t = Thread(target=worker)
-        t.start()
-
-    q.join()
-
-    logging.info(f"Found {len(results)} active hosts!")
-    for host in results:
-        logging.info(f"Host found: {host}")
+### **2️ Scan Complet de Tous les Ports**
+```bash
+astsu -sA 192.168.1.1
 ```
+➡ Scanne **tous les ports TCP (0-65535)**.  
 
-### ✅ **Résultats attendus :**  
-- Meilleure gestion des ressources réseau.  
-- Réduction du risque de saturation sur des réseaux sensibles.  
-
----
-
-## 🖥️ **7.4 Amélioration de la Détection d’OS (Préparation)**
-
-Tu as mentionné vouloir **améliorer la détection d’OS**. Voici quelques pistes que nous pourrons implémenter :  
-
-### 🔍 **Approches possibles :**  
-1. **Fingerprinting TCP Avancé :**  
-   - Analyse des **options TCP**, des **fenêtres de taille**, et des **réponses aux paquets malformés**.  
-   - Observation des réponses SYN-ACK pour des comportements spécifiques à certains OS.  
-
-2. **Bannières des Services :**  
-   - Identifier des indices sur l’OS à partir des services exposés (ex : SSH peut indiquer un OS Linux spécifique).  
-
-3. **Combinaison de Méthodes :**  
-   - Fusion des résultats ICMP, TCP et des bannières de services pour une détection plus fiable.  
-
-### 🧪 **Exemple d’approche hybride :**
-
-```python
-def advanced_os_scan(self):
-    # Analyse ICMP (TTL)
-    icmp_os = os_detection.scan(self.target)
-
-    # Fingerprinting TCP (réponse aux paquets SYN-ACK)
-    tcp_pkt = IP(dst=self.target) / TCP(dport=80, flags="S")
-    tcp_resp = sr1(tcp_pkt, timeout=3, verbose=0)
-    tcp_os = "Unknown"
-
-    if tcp_resp and tcp_resp.haslayer(TCP):
-        window_size = tcp_resp[TCP].window
-        if window_size == 64240:
-            tcp_os = "Linux probable"
-        elif window_size == 8192:
-            tcp_os = "Windows probable"
-
-    # Fusion des résultats
-    if icmp_os == tcp_os:
-        final_os = icmp_os
-    else:
-        final_os = f"Possibly {icmp_os} or {tcp_os}"
-
-    logging.info(f"Advanced OS Detection: {final_os}")
+### **3️ Scan d’un Port Spécifique**
+```bash
+astsu -sP 22 192.168.1.1
 ```
+➡ Vérifie si le **port 22 (SSH)** est ouvert.  
 
-### ✅ **Résultats attendus :**  
-- Une **réduction des faux positifs** en croisant plusieurs sources d’informations.  
-- Meilleure précision pour identifier des systèmes obscurs ou protégés.  
-
----
-
-## 🛡️ **7.5 Gestion des Erreurs et Sécurité**
-
-1. **Amélioration des Messages d’Erreur :**  
-   - Ajouter des messages plus détaillés pour aider à diagnostiquer des problèmes de réseau, de permissions, etc.  
-   - Exemple : distinguer entre un port fermé et un port filtré par un pare-feu.  
-
-2. **Vérification des Permissions :**  
-   - Certains scans (comme le SYN Scan) nécessitent des privilèges root/admin.  
-   - Vérifier automatiquement si l’utilisateur a les droits nécessaires.  
-
-### 🔐 **Exemple de vérification de privilèges (Linux) :**
-
-```python
-import os
-def check_privileges():
-    if os.geteuid() != 0:
-        logging.warning("Warning: Some scans require root privileges to work properly.")
+### **4️ Découverte des Hôtes sur le Réseau**
+```bash
+astsu -d
 ```
+➡ Affiche les **machines connectées au réseau local**.  
+
+### **5️ Détection de l’OS de la Cible**
+```bash
+astsu -sO 192.168.1.1
+```
+➡ Essaye d’identifier **le système d’exploitation** via ICMP et TCP.  
 
 ---
-
-## 🚀 **7.6 Nouvelles Fonctionnalités Potentielles (Roadmap)**
-
-1. **Scan ARP pour les réseaux locaux :**  
-   - Plus efficace que l’ICMP pour la détection d’hôtes sur un LAN.  
-
-2. **Détection de Vulnérabilités de Base :**  
-   - Vérification des services exposés contre des bases de vulnérabilités connues (CVE simples).  
-
-3. **Interface Web Légère (optionnelle) :**  
-   - Dashboard pour visualiser les résultats des scans de manière interactive.  
-
----
-
-## ✅ **Bilan de la Phase 7**
-
-### 🔑 **Ce qu’on a couvert :**  
-- **Optimisation des performances** avec le multithreading pour les scans de ports et la découverte d’hôtes.  
-- **Préparation à l’amélioration de la détection d’OS** (fingerprinting hybride).  
-- **Meilleure gestion des erreurs** pour des scans plus fiables et sécurisés.  
-- **Perspectives d’évolution** avec des fonctionnalités avancées à venir.  
-
----
-
-### 🚀 **Prochaine Étape : Phase 8 - Documentation et Partage de Projet**
-
-On va :  
-1. Préparer la **documentation technique** (README, commentaires dans le code, etc.).  
-2. Structurer un **post LinkedIn** pour présenter ton projet et ton apprentissage.  
-3. Discuter des **bonnes pratiques de présentation technique** pour maximiser l’impact de ton travail.  
-
-Prêt à continuer ? 😊

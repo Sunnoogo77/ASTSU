@@ -52,12 +52,13 @@ def print_banner(fast_mode=False):
     clear()
     
     ascii_logo = textwrap.dedent(f"""
-        {RED} .d8b.  .d8888. d888888b .d8888. db    db{RESET}
-        {RED}d8' `8b 88'  YP `~~88~~' 88'  YP 88    88{RESET}
-        {RED}88ooo88 `8bo.      88    `8bo.   88    88{RESET}
-        {RED}88~~~88   `Y8b.    88      `Y8b. 88    88{RESET}
-        {RED}88   88 db   8D    88    db   8D 88b  d88{RESET}
-        {RED}YP   YP `8888Y'    YP    `8888Y' ~Y8888P'{RESET}
+        
+        {RED}\t\t\t\t\t\t\t .d8b.  .d8888. d888888b .d8888. db    db{RESET}
+        {RED}\t\t\t\t\t\t\td8' `8b 88'  YP `~~88~~' 88'  YP 88    88{RESET}
+        {RED}\t\t\t\t\t\t\t88ooo88 `8bo.      88    `8bo.   88    88{RESET}
+        {RED}\t\t\t\t\t\t\t88~~~88   `Y8b.    88      `Y8b. 88    88{RESET}
+        {RED}\t\t\t\t\t\t\t88   88 db   8D    88    db   8D 88b  d88{RESET}
+        {RED}\t\t\t\t\t\t\tYP   YP `8888Y'    YP    `8888Y' ~Y8888P'{RESET}
 
 
         {CYAN}Github:{RESET} https://github.com/Sunnoogo77/ASTSU
@@ -73,9 +74,9 @@ def print_banner(fast_mode=False):
         
         """)
     
-    border = f"{YELLOW}{'=' * 50}{RESET}"
+    border = f"{YELLOW}{'=' * 155}{RESET}"
     msg = f"\n{CYAN}[INFO]{RESET} Démarrage de ASTSU...\n"
-    message = f"{RED}\tBienvenue dans ASTSU \nAdvanced Security Testing and Scanning Utility{RESET}"
+    message = f"{RED}\t\t\t\t\t\tBienvenue dans ASTSU - Advanced Security Testing and Scanning Utility{RESET}"
     
     if use_rpycolors:
         console_print = rpycolors.Console().print
@@ -340,7 +341,7 @@ class Scanner:
         answers, _ = scapy.sr(pkg, timeout=3, retry=2, verbose=0, iface=self.interface if self.interface else None)
 
         if answers:
-            results_queue.put(target)  # Ajoute l'IP trouvée dans la queue
+            results_queue.put(target) 
 
     def service_scan(self, target):
         open_ports = [21, 22, 80, 433, 3306, 8080]
@@ -457,10 +458,10 @@ class Scanner:
 def arguments():
     parser = argparse.ArgumentParser(
         description="ASTSU - Advanced Security Testing and Scanning Utility",
-        usage="\n\t astsu.py [options] target",
+        usage="\n\t astsu.py [options] [target]",
     )
     
-    #Optionq de scan
+    #Option de scan
     parser.add_argument('-sC', '--scan-common', help="Scan des ports courants", action="count")        
     parser.add_argument('-sA', '--scan-all', help="Scan de tous les ports (0-65535)", action="count")
     parser.add_argument('-sP', '--scan_port', help="Scan d'un port spécifique", type=int)
@@ -528,8 +529,6 @@ if __name__ == '__main__':
         with open(output_file, "w") as f:
             f.write("\t\t===== ASTU Scan Report =====\n\n")
 
-    # print("\n\tBienvenue dans ASTU - Advanced Network Scanner 🚀\n")
-
     if args.scan_common:
         print(f"\n\tScan des ports courants sur {args.Target}")
         results = scanner.common_scan(stealth=args.stealth)
@@ -554,8 +553,9 @@ if __name__ == '__main__':
                 for line in results:
                     f.write(f"{line} \n")
                 f.write("\n")
+
     if args.scan_os:
-        print(f"\n\nDétection de l'OS de la cible {args.Target}")
+        print(f"\n\nDétection de l'OS de la cible {args.Target}\n")
         results = scanner.os_scan()
         if args.output:
             with open(output_file, "a") as f:
