@@ -100,5 +100,8 @@ astsu -sV 192.168.1.1
 ## **💡 Remarque**  
 Pour une documentation plus détaillée, consultez le fichier [**`Plan.md`**](Plan.md).  
 
+
+## **📖 À propos du projet**  
+Ce projet est une **reproduction améliorée** d’un outil existant : **[ASTSU de ReddyyZ](https://github.com/ReddyyZ/astsu)**.  
+L’objectif était de **comprendre son fonctionnement**, d’y apporter des **améliorations**
 ---
-  
