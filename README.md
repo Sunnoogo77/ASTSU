@@ -6,7 +6,7 @@
 ## **🛠 ASTSU - Advanced Security Testing & Scanning Utility**  
 🔍 Outil avancé de scan réseau et de test de sécurité  
 
-![ASTSU Logo](https://github.com/Sunnoogo77/ASTSU/.img/ASTSU_bg.jpg)  
+![ASTSU Logo](.img/ASTSU_bg.jpg)  
 
 ---
 
