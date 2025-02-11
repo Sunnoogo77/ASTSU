@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os,sys,argparse,textwrap,ipaddress,logging
+import os,sys,argparse,textwrap,ipaddress
 import scapy.all as scapy
 import socket
 from ctypes import *
@@ -9,7 +9,14 @@ from time import sleep
 from threading import Thread, Semaphore
 from modules import service_detection,os_detection
 from progress.bar import ChargingBar 
-# from progress.bar import ChargingBar
+import concurrent.futures  
+from queue import Queue
+import socket
+import logging
+import warnings
+warnings.simplefilter("ignore", category=SyntaxWarning)
+logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
+
 # from colorama import Foreimport rpycolorlors
 # old_print = printprint = rpycolors.Consolo().print
 
@@ -19,8 +26,6 @@ logging.basicConfig(
     format='[%(levelname)s] %(message)s',
     level=logging.INFO
 )
-
-# logging.getLogger("scapy.runtime").setlevel(logging.ERROR)
 
 clear = lambda:os.system('cls' if os.name == 'nt' else 'clear')
 
@@ -262,17 +267,15 @@ class Scanner:
         else:
             print("\n\t[[red]-[/red]] [ERROR] Impossible de détecter le système d'exploitation\n")
         return target_os_str
-    
-    def send_icmp(self, target, result, index):
-        # print(f"[+] Envoi de paquets ICMP à {target}...")
-        target = str(target)
-        host_found = []
-        pkg = scapy.IP(dst=target) / scapy.ICMP()
-        answers, unanswered = scapy.sr(pkg, timeout=3, retry=2, verbose=0, iface=self.interface if self.interface else None)
-        answers.summary(lambda r: host_found.append(target))
 
-        if host_found:
-            result[index] = host_found[0]
+    def send_icmp(self, target, results_queue):
+        target = str(target)
+        # sys.stdout = None
+        pkg = scapy.IP(dst=target) / scapy.ICMP()
+        answers, _ = scapy.sr(pkg, timeout=3, retry=2, verbose=0, iface=self.interface if self.interface else None)
+
+        if answers:
+            results_queue.put(target)  # Ajoute l'IP trouvée dans la queue
 
     def service_scan(self, target):
         open_ports = [21, 22, 80, 433, 3306, 8080]
@@ -313,19 +316,18 @@ class Scanner:
                     results.append(f"Port {port} : -")
                     
         return results
-        
-    def discover_net(self, ip_range=24, max_threads=50):  # Ajout d'une limite de threads
+    
+    def discover_net(self, ip_range=24, max_threads=50):
         protocol = self.protocol if self.protocol else "ICMP"
 
         if protocol != "ICMP":
-            print(f"\n\n❌❌❌❌❌[WARNING]  {protocol} n'est pas supporté ! Utilisation forcée d'ICMP.\n")
-            print("❌❌❌❌❌[ERROR] Protocole invalide pour ce scan.\n\n")
+            print(f"\n\n❌ [WARNING] {protocol} n'est pas supporté ! Utilisation forcée d'ICMP.\n")
+            print("❌ [ERROR] Protocole invalide pour ce scan.\n\n")
             return False
 
         try:
-            print(f"\n\n\tDémarrage - Découverte des hôtes sur le réseau local\n")
+            print(f"\n\n\t🔍 Démarrage - Découverte des hôtes sur le réseau local\n")
             
-            # Vérification et formatage de l'adresse IP de base
             base_ip_parts = self.my_ip.split('.')
             if len(base_ip_parts) != 4:
                 logging.critical("[ERROR] Adresse IP locale invalide !")
@@ -339,46 +341,43 @@ class Scanner:
             logging.critical(f"[ERROR] Erreur avec l'adresse IP fournie : {e}")
             return False
 
-        logging.info(f"[INFO] Scan ICMP en cours sur {len(hosts)} hôtes...")
+        # Utilisation de ThreadPoolExecutor pour le multitâche
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+            results_queue = Queue()
+            bar = ChargingBar("[INFO] Scan en cours...", max=len(hosts))
+            
+            
+            futures = [executor.submit(self.send_icmp, host, results_queue) for host in hosts]
+            # sys.stdout = None
+            bar.start()
+            
+            for _ in concurrent.futures.as_completed(futures):
+                bar.next()
+            bar.finish()
+            print("\n")
 
-        # Initialisation de la barre de progression
-        bar = ChargingBar("[INFO]  Scan en cours...", max=len(hosts))
-        results = [None] * len(hosts)
-
-        # ✅ Ajout d'une limite de threads pour éviter de surcharger le CPU
-        semaphore = Semaphore(max_threads)
-
-        # Gestion des threads
-        threads = []
-        for i, host in enumerate(hosts):
-            semaphore.acquire()
-
-            def worker(target_host, index):
-                self.send_icmp(target_host, results, index)
-                semaphore.release()  
-
-            t = Thread(target=worker, args=(host, i))
-            t.start()
-            threads.append(t)
-
-        for t in threads:
-            t.join()
-            bar.next()  
-
-        bar.finish()  
-
-        # Résultat final
-        hosts_found = [i for i in results if i is not None]
+            # Récupération des résultats
+            hosts_found = []
+            while not results_queue.empty():
+                result = results_queue.get()
+                if result:
+                    hosts_found.append(result)
         
+        
+
+        # Affichage des résultats triés
         if hosts_found:
-            logging.info(f"[INFO] {len(hosts_found)} hôtes actifs trouvés :")
+            hosts_found.sort()  # Trier les IP trouvées dans l'ordre
+            print(f"\n\t{len(hosts_found)} hôtes actifs trouvés :\n")
             for host in hosts_found:
-                logging.info(f"[INFO]  ➜ {host}")
+                print(f"  ➜   {host}")
+            print("\n")
         else:
-            logging.warning("[WARNING] Aucun hôte actif trouvé.")
+            print("\n⚠️ Aucun hôte actif trouvé.")
+            print("🔹 Vérifiez que les machines sont allumées.")
+            print("🔹 Vérifiez si le pare-feu bloque les requêtes ICMP.")
 
-        return bool(hosts_found)  # Retourne `True` si au moins un hôte est trouvé
-
+        return hosts_found
 
 
 def arguments():
@@ -408,7 +407,7 @@ def arguments():
     
     args = parser.parse_args()
     
-    #Verification des arguments (affiche l'aide si aucun argument est scpécifié)
+    # Verification des arguments (affiche l'aide si aucun argument est scpécifié)
     if not (args.scan_common or args.scan_all or args.discover or args.scan_os or args.scan_service or args.version or args.scan_port):
         parser.print_help()
         sys.exit(1)
@@ -419,10 +418,10 @@ def arguments():
         sys.exit(1)
     
     return (args, parser)
-
+            
 if __name__ == '__main__':
     args, parser = arguments()
-
+    
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8",80))
@@ -473,11 +472,14 @@ if __name__ == '__main__':
                 f.write("\n".join(results) + "\n")
                             
     if args.discover:
-        logging.info("Découverte des hôtes sur le réseau local")
+        print("\n\n\tDécouverte des hôtes sur le réseau local\n")
         results = scanner.discover_net()
         if args.output:
             with open(output_file, "a") as f:
-                f.write("\n".join(results) + "\n")
+                f.write("\n\t--Network Scan Result--\n\n")
+                for line in results:
+                    f.write(f"{line} \n")
+                
 
     if args.scan_os:
         print(f"\n\nDétection de l'OS de la cible {args.Target}")
