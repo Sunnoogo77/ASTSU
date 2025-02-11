@@ -98,7 +98,7 @@ astsu -sV 192.168.1.1
 ---
 
 ## **💡 Remarque**  
-Pour une documentation plus détaillée, consultez le fichier **`Plan.md`**.  
+Pour une documentation plus détaillée, consultez le fichier [**`Plan.md`**](Plan.md).  
 
 ---
   
