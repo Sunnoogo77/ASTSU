@@ -103,5 +103,6 @@ Pour une documentation plus détaillée, consultez le fichier [**`Plan.md`**](Pl
 
 ## **📖 À propos du projet**  
 Ce projet est une **reproduction améliorée** d’un outil existant : **[ASTSU de ReddyyZ](https://github.com/ReddyyZ/astsu)**.  
-L’objectif était de **comprendre son fonctionnement**, d’y apporter des **améliorations**
+L’objectif était de **comprendre son fonctionnement**, d’y apporter des **améliorations** personnelles.
+
 ---
