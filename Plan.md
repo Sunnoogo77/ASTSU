@@ -65,11 +65,7 @@
 
 ---
 
-### ✅ **Phase 8 : Documentation et Partage de Projet**  
-- **Objectif :** Préparer un post LinkedIn pour présenter le projet.  
-- **Ce qu'on va voir :**  
-  - Structuration d’un post technique (explications, captures d’écran, démonstrations).  
-  - Conseils pour présenter ton travail de manière professionnelle.  
+### ----------------------------------------------  
 
 ---
 
@@ -78,15 +74,21 @@
 ### **1.1 Structure Globale du Projet**  
 ASTU est structuré de manière modulaire, ce qui est parfait pour la maintenir facilement :  
 ```
-astu/
-├── astsu.py                # Script principal
-├── install.py              # Script d'installation
-├── requirements.txt        # Dépendances Python
-├── modules/                # Modules pour la détection des services et OS
+astu/       
+├── .venv/  
+├── modules/                
 │   ├── __init__.py
 │   ├── service_detection.py
-│   └── os_detection.py
-├── service_probes          # Probes pour le fingerprinting des services
+│   ├─── os_detection.py
+│   └── __pycache__/                
+│       ├── __init__.cpython-312.pyc
+│       ├── os_detection.cpython-312.pyc
+│       └── service_detection.cpython-312.pyc
+│
+├── astsu.py                # Script principal
+├── install.py              # Script d'installation
+├── requirements.txt
+├── service_probes         
 ├── .gitignore
 ├── README.md
 └── LICENSE
@@ -94,9 +96,8 @@ astu/
 
 ### **1.2 Rôle de Chaque Composant**  
 - **`astsu.py`** : Le cœur de l’application. C’est ici que la logique principale est implémentée.  
-- **`modules/service_detection.py`** : Gère la détection des services réseau actifs (via Nmap et Scapy).  
-- **`modules/os_detection.py`** : Gère la détection du système d’exploitation de la cible.  
-- **`service_probes`** : Contient des signatures pour identifier les services (probablement des bannières réseau).  
+- **`modules/service_detection.py`** : Gère la détection des services réseau actifs (via Scapy).  
+- **`modules/os_detection.py`** : Gère la détection du système d’exploitation de la cible. 
 - **`install.py`** : Script d’installation pour configurer ASTU sur Linux ou Windows.  
 - **`requirements.txt`** : Liste des bibliothèques Python nécessaires (`scapy`, `nmap_vscan`, `colorama`, etc.).  
 
@@ -129,12 +130,12 @@ On va la décortiquer étape par étape pour bien comprendre son fonctionnement.
 
 ```python
 class Scanner:
-    def __init__(self, target=None, my_ip=None, protocol=None, timeout=5, interface=None):
-        self.target = target
+    def __init__(self, target=None, my_ip=None, protocol=None, timeout=5, interface=None, port=None):
+        self.target = args.Target if args.Target else target
         self.my_ip = my_ip
         self.protocol = protocol
-        self.timeout = timeout
-        self.interface = interface
+        self.timeout = args.timeout if args.timeout else 5
+        self.interface = args.interface if args.interface else None
 ```
 
 ### **🔑 Analyse des paramètres :**  
