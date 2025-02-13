@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 import os,sys,argparse,textwrap,ipaddress
 import scapy.all as scapy
 import socket
@@ -15,7 +14,6 @@ import socket
 import logging
 import warnings
 import textwrap
-
 try :
     from colorama import Fore, Style, init
     import rpycolors
@@ -453,7 +451,6 @@ class Scanner:
         print("\n")
         
         return hosts_found_tuple
-
 
 def arguments():
     parser = argparse.ArgumentParser(
