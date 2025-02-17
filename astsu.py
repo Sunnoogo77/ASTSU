@@ -72,7 +72,7 @@ def print_banner(fast_mode=False):
         
         """)
     
-    border = f"{YELLOW}{'=' * 155}{RESET}"
+    border = f"{YELLOW}{'=' * 100}{RESET}"
     msg = f"\n{CYAN}[INFO]{RESET} Démarrage de ASTSU...\n"
     message = f"{RED}\t\t\t\t\t\tBienvenue dans ASTSU - Advanced Security Testing and Scanning Utility{RESET}"
     
@@ -583,3 +583,7 @@ if __name__ == '__main__':
                 with open(output_file, "a") as f:
                     f.write("\tPort_Scan results\n\n")
                     f.write(f"Port : {args.scan_port} - {status}")
+                    
+                    
+                    
+
