@@ -16,4 +16,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 RUN chmod +x astsu.py
 
-CMD ["python3", "astsu.py", "-h"]
+# CMD ["python3", "astsu.py", "-h"]
+ENTRYPOINT ["python3", "astsu.py"]
