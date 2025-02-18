@@ -1,4 +1,4 @@
-# **🛠 ASTSU - Advanced Security Testing & Scanning Utility**  
+### **🛠 ASTSU - Advanced Security Testing & Scanning Utility**  
 🔍 Outil avancé de scan réseau et de test de sécurité  
 
 ![ASTSU Logo](.img/ASTSU_bg.jpg)  
@@ -17,9 +17,51 @@ Pour une explication détaillée des fonctionnalités, consultez **`Plan.md`**.
 
 ---
 
-## **📥 Installation**  
+## **📥 Installation & Exécution**  
 
-### 🔹 **Linux**  
+### 🔹 **Exécution avec Docker (Recommandé)**  
+ASTSU a été conteneurisé pour une **installation rapide** sans dépendances.  
+
+#### **📌 Prérequis : Installer Docker**  
+Si Docker n’est pas installé sur votre système :  
+```bash
+# Installer Docker sous Linux
+sudo apt update && sudo apt install -y docker.io
+sudo systemctl enable --now docker
+```
+
+#### **📌 Construire l'image Docker ASTSU**  
+```bash
+git clone https://github.com/Sunnoogo77/ASTSU.git
+cd ASTSU
+docker build -t astsu-cli .
+```
+
+#### **📌 Utilisation avec Docker**  
+```bash
+docker run --rm --network="host" astsu-cli -sC 192.168.1.1
+```
+### **📌 Rendre ASTSU accessible facilement**
+Plutôt que d’exécuter une longue commande, tu peux créer un **alias** pour utiliser ASTSU directement :
+
+```sh
+echo 'alias astsu="docker run --rm --network=host astsu-cli"' >> ~/.bashrc
+source ~/.bashrc
+```
+Désormais, exécuter ASTSU sera aussi simple que :
+```sh
+astsu -sC 192.168.1.1
+```
+🚀 **Tu peux maintenant exécuter ASTSU comme une commande native !*
+
+⚠️ **Sur Windows, Docker Desktop doit être en mode "WSL 2" pour exécuter le conteneur correctement.**  
+
+---
+
+### 🔹 **Installation manuelle (Optionnel, Non recommandé)**  
+Si vous ne souhaitez pas utiliser Docker, ASTSU peut être installé manuellement.
+
+#### **📌 Linux**  
 ```bash
 git clone https://github.com/Sunnoogo77/ASTSU.git
 cd ASTSU
@@ -27,7 +69,7 @@ chmod +x install.py
 sudo python3 install.py
 ```
 
-### 🔹 **Windows**  
+#### **📌 Windows**  
 ```powershell
 git clone https://github.com/Sunnoogo77/ASTSU.git
 cd ASTSU
@@ -81,9 +123,9 @@ astsu -sV 192.168.1.1
 ---
 
 ## **🖥️ Systèmes Supportés**  
-✅ Windows  
-✅ Linux  
-⏳ macOS *(non testé, peut nécessiter des ajustements)*  
+✅ **Windows** (via Docker)  
+✅ **Linux**  
+⏳ **macOS** *(non testé, peut nécessiter des ajustements)*  
 
 ---
 
@@ -95,9 +137,11 @@ astsu -sV 192.168.1.1
 ## **💡 Remarque**  
 Pour une documentation plus détaillée, consultez le fichier [**`Plan.md`**](Plan.md).  
 
+---
 
 ## **📖 À propos du projet**  
 Ce projet est une **reproduction améliorée** d’un outil existant : **[ASTSU de ReddyyZ](https://github.com/ReddyyZ/astsu)**.  
-L’objectif était de **comprendre son fonctionnement**, d’y apporter des **améliorations** personnelles.
+L’objectif était de **comprendre son fonctionnement**, d’y apporter des **améliorations** personnelles, et de le rendre **plus facile à installer et exécuter via Docker**.  
 
 ---
+🚀 **Avec Docker, ASTSU peut maintenant être exécuté sans souci sur n’importe quelle machine Linux !** 💻
