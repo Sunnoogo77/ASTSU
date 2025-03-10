@@ -51,17 +51,17 @@ def print_banner(fast_mode=False):
     
     ascii_logo = textwrap.dedent(f"""
         
-        {RED}\t\t\t\t\t\t\t .d8b.  .d8888. d888888b .d8888. db    db{RESET}
-        {RED}\t\t\t\t\t\t\td8' `8b 88'  YP `~~88~~' 88'  YP 88    88{RESET}
-        {RED}\t\t\t\t\t\t\t88ooo88 `8bo.      88    `8bo.   88    88{RESET}
-        {RED}\t\t\t\t\t\t\t88~~~88   `Y8b.    88      `Y8b. 88    88{RESET}
-        {RED}\t\t\t\t\t\t\t88   88 db   8D    88    db   8D 88b  d88{RESET}
-        {RED}\t\t\t\t\t\t\tYP   YP `8888Y'    YP    `8888Y' ~Y8888P'{RESET}
+        {RED}\t\t\t .d8b.  .d8888. d888888b .d8888. db    db{RESET}
+        {RED}\t\t\td8' `8b 88'  YP `~~88~~' 88'  YP 88    88{RESET}
+        {RED}\t\t\t88ooo88 `8bo.      88    `8bo.   88    88{RESET}
+        {RED}\t\t\t88~~~88   `Y8b.    88      `Y8b. 88    88{RESET}
+        {RED}\t\t\t88   88 db   8D    88    db   8D 88b  d88{RESET}
+        {RED}\t\t\tYP   YP `8888Y'    YP    `8888Y' ~Y8888P'{RESET}
 
 
-        {CYAN}Github:{RESET} https://github.com/Sunnoogo77/ASTSU
-        {CYAN}By:{RESET} {YELLOW}Sunnoogo77
-        {CYAN}Version:{RESET} {__version__}
+        {CYAN}\t\tGithub:{RESET} https://github.com/Sunnoogo77/ASTSU
+        {CYAN}\t\tBy:{RESET} {YELLOW}Sunnoogo77
+        {CYAN}\t\tVersion:{RESET} {__version__}
         
         {GREEN} \t    ----------------------
         
@@ -72,9 +72,9 @@ def print_banner(fast_mode=False):
         
         """)
     
-    border = f"{YELLOW}{'=' * 100}{RESET}"
+    border = f"{YELLOW}{'\t\t' + '=' * 60}{RESET}"
     msg = f"\n{CYAN}[INFO]{RESET} Démarrage de ASTSU...\n"
-    message = f"{RED}\t\t\t\t\t\tBienvenue dans ASTSU - Advanced Security Testing and Scanning Utility{RESET}"
+    message = f"{RED}\t    Bienvenue dans ASTSU - Advanced Security Testing and Scanning Utility{RESET}"
     
     if use_rpycolors:
         console_print = rpycolors.Console().print
